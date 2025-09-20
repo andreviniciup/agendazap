@@ -112,3 +112,4 @@ class PlanDetails(BaseModel):
     limits: PlanLimits
     popular: bool = False
     recommended: bool = False
+

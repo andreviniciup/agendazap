@@ -40,3 +40,4 @@ class NotificationChannel(str, Enum):
     EMAIL = "email"
     WHATSAPP = "whatsapp"
     BOTH = "both"
+

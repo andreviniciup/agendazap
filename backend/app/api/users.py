@@ -4,6 +4,7 @@ Endpoints de usuários
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from datetime import datetime
 import logging
 
 from app.database import get_db
@@ -137,6 +138,75 @@ async def upgrade_plan(
         raise
     except Exception as e:
         logger.error(f"Erro ao fazer upgrade do plano: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/usage", response_model=dict)
+async def get_usage_stats(
+    current_user: User = Depends(get_current_active_user),
+    plan_service: PlanService = Depends(get_plan_service)
+):
+    """Obter estatísticas de uso do usuário"""
+    try:
+        usage = await plan_service.get_user_usage(str(current_user.id))
+        plan_info = await plan_service.get_plan_info(current_user)
+        
+        return {
+            "usage": usage,
+            "plan_info": plan_info,
+            "alerts": plan_info["alerts"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas de uso: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/plans/compare", response_model=PlanComparison)
+async def compare_plans(
+    current_user: User = Depends(get_current_active_user),
+    plan_service: PlanService = Depends(get_plan_service)
+):
+    """Comparar planos disponíveis"""
+    try:
+        # Obter informações de todos os planos
+        all_plans = {}
+        for plan_type in PlanType:
+            all_plans[plan_type.value] = plan_service.get_plan_limits(plan_type)
+        
+        # Determinar plano recomendado baseado no uso atual
+        usage = await plan_service.get_user_usage(str(current_user.id))
+        recommended_plan = None
+        
+        # Lógica simples de recomendação
+        if usage["appointments_this_month"] > 10 or usage["whatsapp_messages_this_month"] > 50:
+            recommended_plan = PlanType.STARTER
+        elif usage["appointments_this_month"] > 50 or usage["whatsapp_messages_this_month"] > 200:
+            recommended_plan = PlanType.PRO
+        elif usage["appointments_this_month"] > 100 or usage["whatsapp_messages_this_month"] > 500:
+            recommended_plan = PlanType.ENTERPRISE
+        
+        return PlanComparison(
+            current_plan=current_user.plan_type,
+            available_plans=all_plans,
+            recommended_plan=recommended_plan,
+            upgrade_benefits={
+                "more_appointments": "Agendamentos ilimitados",
+                "more_messages": "Mais mensagens WhatsApp",
+                "more_services": "Mais serviços disponíveis",
+                "analytics": "Relatórios e analytics",
+                "custom_domain": "Domínio personalizado"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Erro ao comparar planos: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno do servidor"

@@ -134,6 +134,57 @@ async def get_plan_service(
     return PlanService(db, redis_client)
 
 
+async def get_service_service(
+    db: Session = Depends(get_db),
+    plan_service = Depends(get_plan_service)
+):
+    """Dependency para obter serviço de serviços"""
+    from app.services.service_service import ServiceService
+    return ServiceService(db, plan_service)
+
+
+async def get_service_category_service(
+    db: Session = Depends(get_db)
+):
+    """Dependency para obter serviço de categorias de serviços"""
+    from app.services.service_category_service import ServiceCategoryService
+    return ServiceCategoryService(db)
+
+
+async def get_queue_service():
+    """Dependency para obter serviço de filas"""
+    from app.services.queue_service import QueueService
+    redis_client = await get_redis()
+    return QueueService(redis_client)
+
+
+async def get_message_queue(
+    queue_service = Depends(get_queue_service)
+):
+    """Dependency para obter fila de mensagens"""
+    from app.services.queue_service import MessageQueue
+    return MessageQueue(queue_service)
+
+
+async def get_appointment_service(
+    db: Session = Depends(get_db),
+    plan_service = Depends(get_plan_service),
+    message_queue = Depends(get_message_queue)
+):
+    """Dependency para obter serviço de agendamentos"""
+    from app.services.appointment_service import AppointmentService
+    return AppointmentService(db, plan_service, message_queue)
+
+
+async def get_client_service(
+    db: Session = Depends(get_db),
+    plan_service = Depends(get_plan_service)
+):
+    """Dependency para obter serviço de clientes"""
+    from app.services.client_service import ClientService
+    return ClientService(db, plan_service)
+
+
 async def check_plan_limit(
     user_plan: str,
     limit_type: str,

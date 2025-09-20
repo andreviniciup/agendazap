@@ -54,3 +54,4 @@ slowapi==0.1.9
 
 # Configuração
 pydantic-settings==2.1.0
+

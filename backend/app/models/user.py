@@ -30,6 +30,7 @@ class User(Base):
     
     # Relacionamentos
     services = relationship("Service", back_populates="user", cascade="all, delete-orphan")
+    service_categories = relationship("ServiceCategory", back_populates="user", cascade="all, delete-orphan")
     appointments = relationship("Appointment", back_populates="user", cascade="all, delete-orphan")
     clients = relationship("Client", back_populates="user", cascade="all, delete-orphan")
     

@@ -101,3 +101,4 @@ CREATE TRIGGER update_clients_updated_at BEFORE UPDATE ON clients
 -- Inserir usuário de teste (opcional)
 -- INSERT INTO users (email, password_hash, template_type) 
 -- VALUES ('test@agendazap.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/8Kz8KzK', 'consultation');
+

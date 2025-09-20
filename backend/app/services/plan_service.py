@@ -177,6 +177,10 @@ class PlanService:
         if limit_value == -1:
             return 0.0
         
+        # Evitar divisão por zero
+        if limit_value == 0:
+            return 0.0
+        
         current_usage = usage.get(limit_type.replace("_limit", "_count"), 0)
         
         return (current_usage / limit_value) * 100

@@ -130,3 +130,4 @@ async def increment_usage_after_success(
     except Exception as e:
         logger.error(f"Erro ao incrementar uso: {e}")
         # Não falhar a operação principal por erro no contador
+

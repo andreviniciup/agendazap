@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     PRO_MESSAGES_LIMIT: int = 500
     ENTERPRISE_MESSAGES_LIMIT: int = 1000
     
+    # Configurações do WhatsApp
+    WHATSAPP_API_URL: str = "https://graph.facebook.com/v18.0"
+    WHATSAPP_API_TOKEN: str = ""
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    
+    # Configurações de Email
+    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = ""
+    
     # Cache TTL (em segundos)
     CACHE_TTL_AGENDA: int = 3600  # 1 hora
     CACHE_TTL_SERVICES: int = 86400  # 24 horas

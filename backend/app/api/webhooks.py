@@ -34,3 +34,4 @@ async def message_webhook(request: Request):
     data = await request.json()
     logger.info(f"Webhook de mensagem recebido: {data}")
     return {"message": "Webhook de mensagem processado"}
+

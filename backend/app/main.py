@@ -13,7 +13,8 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import init_db
-from app.api import auth, users, services, appointments, clients, webhooks
+from app.api import auth, users, services, appointments, clients, webhooks, queues
+from app.middleware.plan_middleware import PlanLimitMiddleware
 
 # Configurar logging
 logging.basicConfig(
@@ -55,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Adicionar middleware de verificação de limites de planos
+app.add_middleware(PlanLimitMiddleware)
 
 # Configurar Trusted Host
 if settings.ENVIRONMENT == "production":
@@ -118,6 +122,7 @@ app.include_router(services.router, prefix="/api/services", tags=["Serviços"])
 app.include_router(appointments.router, prefix="/api/appointments", tags=["Agendamentos"])
 app.include_router(clients.router, prefix="/api/clients", tags=["Clientes"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
+app.include_router(queues.router, prefix="/api/queues", tags=["Filas"])
 
 
 # Root endpoint

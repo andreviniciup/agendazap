@@ -1,248 +1,256 @@
-# AgendaZap Backend
+# 🚀 AgendaZap Backend
 
-Sistema de agendamento de serviços com automação WhatsApp - Backend FastAPI
+Sistema de agendamento de serviços com automação via WhatsApp - Backend API
 
-## 🚀 Início Rápido
+## 📋 Resumo Executivo
 
-### Pré-requisitos
+O **AgendaZap Backend** é uma API RESTful desenvolvida em **FastAPI** que oferece funcionalidades completas para gestão de agendamentos de serviços com automação de notificações via WhatsApp e email.
 
-- Python 3.11+
-- PostgreSQL 15+
-- Redis 7+
-- Docker e Docker Compose (opcional)
+### 🎯 **Funcionalidades Principais**
 
-### Instalação
+- ✅ **Autenticação JWT** com registro, login e refresh tokens
+- ✅ **Sistema de Planos** com controle de limites (FREE, STARTER, PRO, ENTERPRISE)
+- ✅ **Gestão de Serviços** com categorias e campos customizados
+- ✅ **Sistema de Agendamentos** com verificação de disponibilidade
+- ✅ **Gestão de Clientes** com histórico e métricas avançadas
+- ✅ **Notificações Automáticas** via WhatsApp e email
+- ✅ **Sistema de Filas** com Redis Streams para processamento assíncrono
+- ✅ **Analytics e Relatórios** detalhados
 
-1. **Clone o repositório e navegue para o backend:**
+## 🛠️ **Stack Tecnológico**
+
+| Tecnologia | Versão | Propósito |
+|------------|--------|-----------|
+| **FastAPI** | 0.104.1 | Framework web moderno |
+| **PostgreSQL** | 15 | Banco de dados relacional |
+| **Redis** | 7 | Cache e sistema de filas |
+| **SQLAlchemy** | 2.0.23 | ORM |
+| **Pydantic** | 2.5.0 | Validação de dados |
+| **Docker** | - | Containerização |
+
+## 🚀 **Quick Start**
+
+### 1. **Clone e Configure**
 ```bash
+git clone <repository>
 cd backend
-```
-
-2. **Crie um ambiente virtual:**
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
-```
-
-3. **Instale as dependências:**
-```bash
-pip install -r requirements.txt
-```
-
-4. **Configure as variáveis de ambiente:**
-```bash
 cp env.example .env
-# Edite o arquivo .env com suas configurações
+# Configure as variáveis de ambiente
 ```
 
-5. **Execute o script de desenvolvimento:**
+### 2. **Execute com Docker**
 ```bash
-python run_dev.py
-```
-
-### Usando Docker
-
-```bash
-# Subir todos os serviços
 docker-compose up -d
-
-# Apenas banco e cache
-docker-compose up -d postgres redis
-
-# Ver logs
-docker-compose logs -f backend
 ```
 
-## 📁 Estrutura do Projeto
+### 3. **Acesse a API**
+- **API Docs**: http://localhost:8000/docs
+- **Health Check**: http://localhost:8000/health
 
-```
-backend/
-├── app/
-│   ├── __init__.py
-│   ├── main.py              # Aplicação principal
-│   ├── config.py            # Configurações
-│   ├── database.py          # Conexão DB
-│   ├── dependencies.py      # Dependências globais
-│   │
-│   ├── models/              # Modelos SQLAlchemy
-│   ├── schemas/             # Schemas Pydantic
-│   ├── api/                 # Endpoints
-│   │   ├── auth.py
-│   │   ├── users.py
-│   │   ├── services.py
-│   │   ├── appointments.py
-│   │   ├── clients.py
-│   │   └── webhooks.py
-│   │
-│   ├── core/                # Lógica de negócio
-│   ├── services/            # Serviços
-│   ├── utils/               # Utilitários
-│   └── tests/               # Testes
-│
-├── requirements.txt
-├── docker-compose.yml
-├── Dockerfile
-├── init.sql
-├── run_dev.py
-└── README.md
-```
-
-## 🔧 Configuração
-
-### Variáveis de Ambiente
-
-| Variável | Descrição | Padrão |
-|----------|-----------|---------|
-| `ENVIRONMENT` | Ambiente (development/staging/production) | development |
-| `DATABASE_URL` | URL do PostgreSQL | postgresql://agendazap:agendazap123@localhost:5432/agendazap |
-| `REDIS_URL` | URL do Redis | redis://localhost:6379/0 |
-| `SECRET_KEY` | Chave secreta para JWT | your-secret-key-change-in-production |
-| `TWILIO_ACCOUNT_SID` | SID da conta Twilio | - |
-| `TWILIO_AUTH_TOKEN` | Token de autenticação Twilio | - |
-| `SENDGRID_API_KEY` | Chave API do SendGrid | - |
-
-### Banco de Dados
-
-O banco PostgreSQL é inicializado automaticamente com:
-- Extensões: `uuid-ossp`, `pg_trgm`
-- Enums: `template_type`, `plan_type`, `appointment_status`
-- Tabelas: `users`, `services`, `appointments`, `clients`
-- Índices para performance
-- Triggers para `updated_at`
-
-## 📚 API Endpoints
-
-### Autenticação
-- `POST /api/auth/register` - Registrar usuário
-- `POST /api/auth/login` - Login
-- `POST /api/auth/refresh` - Renovar token
-- `POST /api/auth/logout` - Logout
-
-### Usuários
-- `GET /api/users/profile` - Perfil do usuário
-- `PUT /api/users/profile` - Atualizar perfil
-- `GET /api/users/plan` - Informações do plano
-- `POST /api/users/upgrade` - Upgrade de plano
-
-### Serviços
-- `GET /api/services` - Listar serviços
-- `POST /api/services` - Criar serviço
-- `GET /api/services/{id}` - Obter serviço
-- `PUT /api/services/{id}` - Atualizar serviço
-- `DELETE /api/services/{id}` - Deletar serviço
-
-### Agendamentos
-- `GET /api/appointments` - Listar agendamentos
-- `POST /api/appointments` - Criar agendamento
-- `GET /api/appointments/{id}` - Obter agendamento
-- `PUT /api/appointments/{id}` - Atualizar agendamento
-- `DELETE /api/appointments/{id}` - Deletar agendamento
-
-### Clientes
-- `GET /api/clients` - Listar clientes
-- `POST /api/clients` - Criar cliente
-- `GET /api/clients/{id}` - Obter cliente
-- `PUT /api/clients/{id}` - Atualizar cliente
-- `DELETE /api/clients/{id}` - Deletar cliente
-
-### Webhooks (n8n)
-- `POST /api/webhooks/appointment` - Webhook de agendamento
-- `POST /api/webhooks/sync` - Webhook de sincronização
-- `POST /api/webhooks/message` - Webhook de mensagem
-
-## 🏗️ Arquitetura
-
-### Stack Tecnológico
-- **FastAPI**: Framework web moderno e rápido
-- **PostgreSQL**: Banco de dados principal
-- **Redis**: Cache e filas de mensagens
-- **SQLAlchemy**: ORM para Python
-- **Pydantic**: Validação de dados
-- **JWT**: Autenticação
-- **Twilio**: WhatsApp Business API
-- **SendGrid**: Emails transacionais
-
-### Fluxo de Dados
-```
-Cliente → Frontend → FastAPI → PostgreSQL
-                ↓
-            n8n (WhatsApp) ← Redis (Filas)
-```
-
-## 🧪 Desenvolvimento
-
-### Executar Testes
+### 4. **Inicie os Workers**
 ```bash
-pytest
-pytest --cov=app tests/
+python start_workers.py
 ```
 
-### Formatação de Código
+## 📊 **APIs Principais**
+
+### 🔐 **Autenticação**
 ```bash
-black app/
-isort app/
-flake8 app/
+POST /api/auth/register    # Registrar usuário
+POST /api/auth/login       # Fazer login
+POST /api/auth/refresh     # Renovar token
 ```
 
-### Logs
-Os logs são salvos em `logs/agendazap.log` e também exibidos no console.
-
-## 🚀 Deploy
-
-### Produção
-1. Configure as variáveis de ambiente de produção
-2. Execute as migrações do banco
-3. Use um servidor WSGI como Gunicorn:
-
+### 🛍️ **Serviços**
 ```bash
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker
+GET    /api/services/      # Listar serviços
+POST   /api/services/      # Criar serviço
+PUT    /api/services/{id}  # Atualizar serviço
+DELETE /api/services/{id}  # Deletar serviço
 ```
 
-### Docker
+### 📅 **Agendamentos**
 ```bash
-docker build -t agendazap-backend .
-docker run -p 8000:8000 --env-file .env agendazap-backend
+GET    /api/appointments/                    # Listar agendamentos
+POST   /api/appointments/                    # Criar agendamento
+GET    /api/appointments/availability        # Verificar disponibilidade
+POST   /api/appointments/public              # Agendamento público
 ```
 
-## 📊 Monitoramento
+### 👥 **Clientes**
+```bash
+GET    /api/clients/                         # Listar clientes
+POST   /api/clients/                         # Criar cliente
+GET    /api/clients/{id}/history             # Histórico do cliente
+GET    /api/clients/analytics/overview       # Analytics
+```
 
-### Health Check
-- `GET /health` - Status da aplicação
+### 📬 **Filas e Notificações**
+```bash
+GET    /api/queues/status                    # Status das filas
+POST   /api/queues/test/whatsapp             # Teste WhatsApp
+POST   /api/queues/test/email                # Teste Email
+```
 
-### Métricas
-- Logs estruturados com timestamps
-- Middleware de logging de requests
-- Error handling global
+## 🏗️ **Arquitetura**
 
-## 🔒 Segurança
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │    │   FastAPI       │    │   PostgreSQL    │
+│   (React/Vue)   │◄──►│   Backend       │◄──►│   Database      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │     Redis       │
+                       │  Cache + Queues │
+                       └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │   Workers       │
+                       │  (WhatsApp/Email)│
+                       └─────────────────┘
+```
 
-- JWT para autenticação
-- CORS configurado
-- Rate limiting
-- Validação de dados com Pydantic
-- Hash de senhas com bcrypt
-- HTTPS em produção
+## 📈 **Funcionalidades Implementadas**
 
-## 📝 Próximos Passos
+### ✅ **Ação 1.4: Estrutura Base**
+- Configuração FastAPI com hot reload
+- Integração PostgreSQL + SQLAlchemy
+- Integração Redis para cache
+- Configuração Docker Compose
+- Middleware de CORS e logging
 
-1. ✅ Estrutura base do FastAPI
-2. ✅ Configurações e dependências
-3. ✅ Endpoints básicos
-4. 🔄 Modelos de dados (SQLAlchemy)
-5. 🔄 Autenticação JWT
-6. 🔄 Integração com n8n
-7. 🔄 Testes automatizados
+### ✅ **Ação 2.1: Autenticação JWT**
+- Registro e login de usuários
+- Tokens JWT com refresh automático
+- Middleware de autenticação
+- Validação de senhas seguras
 
-## 🤝 Contribuição
+### ✅ **Ação 2.2: Modelo de Usuário**
+- Perfil completo de usuário
+- Templates de negócio
+- Verificação de email
+- Gestão de configurações
 
-1. Fork o projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
+### ✅ **Ação 2.3: Sistema de Planos**
+- Planos com limites (FREE, STARTER, PRO, ENTERPRISE)
+- Controle de uso em tempo real
+- Sistema de alertas
+- Upgrade/downgrade de planos
 
-## 📄 Licença
+### ✅ **Ação 3.1: Gestão de Serviços**
+- CRUD completo de serviços
+- Categorias de serviços
+- Campos customizados
+- Sistema de busca e filtros
 
-Este projeto está sob a licença MIT. Veja o arquivo LICENSE para mais detalhes.
+### ✅ **Ação 3.2: Sistema de Agendamentos**
+- CRUD completo de agendamentos
+- Verificação de disponibilidade
+- Detecção de conflitos
+- Agendamentos públicos
+
+### ✅ **Ação 3.3: Gestão de Clientes**
+- Modelo de cliente expandido
+- Criação automática no primeiro agendamento
+- Sistema de histórico completo
+- Métricas de frequência
+- Analytics avançados
+
+### ✅ **Sistema de Filas e Notificações**
+- Redis Streams para filas
+- Workers assíncronos
+- Integração WhatsApp API
+- Integração Email SMTP
+- Sistema de retry automático
+
+## 🔧 **Configuração**
+
+### **Variáveis de Ambiente Essenciais**
+```bash
+# Banco de dados
+DATABASE_URL=postgresql://user:password@localhost:5432/agendazap
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# JWT
+SECRET_KEY=your-secret-key-here
+
+# WhatsApp API
+WHATSAPP_API_TOKEN=your-whatsapp-token
+WHATSAPP_PHONE_NUMBER_ID=your-phone-number-id
+
+# Email
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+```
+
+## 📊 **Exemplo de Uso**
+
+### **1. Registrar Usuário**
+```bash
+curl -X POST "http://localhost:8000/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "usuario@exemplo.com",
+    "password": "Senha123!",
+    "template_type": "service_table",
+    "whatsapp_number": "+5511999999999"
+  }'
+```
+
+### **2. Criar Serviço**
+```bash
+curl -X POST "http://localhost:8000/api/services/" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Corte de Cabelo",
+    "description": "Corte moderno e estiloso",
+    "duration": 60,
+    "price": 50.0
+  }'
+```
+
+### **3. Criar Agendamento**
+```bash
+curl -X POST "http://localhost:8000/api/appointments/" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service_id": "uuid-do-servico",
+    "client_name": "João Silva",
+    "client_whatsapp": "+5511888888888",
+    "start_time": "2024-01-15T14:00:00Z"
+  }'
+```
+
+## 📚 **Documentação Completa**
+
+Para documentação detalhada, consulte: [DOCUMENTATION.md](./DOCUMENTATION.md)
+
+## 🎯 **Status do Projeto**
+
+- ✅ **Backend API**: 100% implementado
+- ✅ **Autenticação**: 100% implementado
+- ✅ **Sistema de Planos**: 100% implementado
+- ✅ **Gestão de Serviços**: 100% implementado
+- ✅ **Sistema de Agendamentos**: 100% implementado
+- ✅ **Gestão de Clientes**: 100% implementado
+- ✅ **Sistema de Filas**: 100% implementado
+- ✅ **Notificações**: 100% implementado
+
+## 🚀 **Próximos Passos**
+
+1. **Frontend Web** - Interface para usuários
+2. **Mobile App** - Aplicativo móvel
+3. **Integrações** - Pagamentos, CRM
+4. **Deploy Produção** - Nuvem
+5. **Monitoramento** - Logs e métricas
+
+---
+
+**🎉 O AgendaZap Backend está pronto para uso!**

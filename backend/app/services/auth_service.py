@@ -228,3 +228,4 @@ class AuthService:
         logger.info(f"Senha alterada para usuário: {user.email}")
         
         return {"message": "Senha alterada com sucesso"}
+

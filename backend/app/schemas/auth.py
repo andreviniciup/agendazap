@@ -86,3 +86,4 @@ class PasswordReset(BaseModel):
         if not any(c.isdigit() for c in self.new_password):
             raise ValueError('Nova senha deve conter pelo menos um número')
         return True
+
