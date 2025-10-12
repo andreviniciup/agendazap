@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 import logging
 from uuid import UUID
+from html import escape
 
 from app.models.user import User
 from app.utils.enums import TemplateType
@@ -170,9 +171,10 @@ AgendaZap"""
         user: User, 
         template_type: str, 
         variables: Dict[str, Any],
-        use_cache: bool = True
+        use_cache: bool = True,
+        escape_html: bool = True
     ) -> str:
-        """Renderizar template com variáveis"""
+        """Renderizar template com variáveis (com escape de HTML para segurança)"""
         try:
             template_content = self.get_template_by_type(user, template_type, use_cache)
             
@@ -180,11 +182,17 @@ AgendaZap"""
                 logger.warning(f"Template {template_type} não encontrado para usuário {user.id}")
                 return ""
             
-            # Substituir variáveis no template
+            # Substituir variáveis no template com escape de HTML
             rendered_content = template_content
             for key, value in variables.items():
                 placeholder = f"{{{key}}}"
-                rendered_content = rendered_content.replace(placeholder, str(value))
+                
+                # Converter para string e escapar HTML para prevenir XSS
+                str_value = str(value) if value is not None else ""
+                if escape_html:
+                    str_value = escape(str_value)
+                
+                rendered_content = rendered_content.replace(placeholder, str_value)
             
             return rendered_content
             

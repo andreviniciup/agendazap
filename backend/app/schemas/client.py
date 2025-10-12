@@ -165,7 +165,12 @@ class ClientStats(BaseModel):
 
 class ClientSearch(BaseModel):
     """Schema para busca e filtros de clientes"""
-    query: Optional[str] = Field(None, description="Termo de busca no nome, email ou WhatsApp")
+    query: Optional[str] = Field(
+        None, 
+        max_length=100,
+        pattern=r'^[a-zA-Z0-9\s\-\.\@\+áàâãéèêíïóôõöúçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]*$',
+        description="Termo de busca no nome, email ou WhatsApp (apenas caracteres seguros)"
+    )
     is_active: Optional[bool] = Field(None, description="Filtrar por status ativo")
     is_vip: Optional[bool] = Field(None, description="Filtrar por clientes VIP")
     is_regular: Optional[bool] = Field(None, description="Filtrar por clientes regulares")

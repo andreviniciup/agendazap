@@ -29,9 +29,42 @@ class ServiceCreate(ServiceBase):
     
     @validator('images')
     def validate_images(cls, v):
-        """Validar imagens"""
-        if v and len(v) > 5:
+        """Validar imagens com verificação de URL e tamanho"""
+        if not v:
+            return v
+            
+        if len(v) > 5:
             raise ValueError('Máximo de 5 imagens permitidas')
+        
+        # Validar cada URL de imagem
+        import re
+        url_pattern = re.compile(
+            r'^https?://'  # http:// ou https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domínio
+            r'localhost|'  # localhost
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ou IP
+            r'(?::\d+)?'  # porta opcional
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE
+        )
+        
+        for url in v:
+            # Verificar tamanho da URL (prevenir URLs absurdamente longas)
+            if len(url) > 2048:
+                raise ValueError('URL de imagem muito longa (máximo 2048 caracteres)')
+            
+            # Validar formato de URL
+            if not url_pattern.match(url):
+                raise ValueError(f'URL de imagem inválida: {url[:50]}...')
+            
+            # Verificar extensão permitida
+            allowed_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+            if not any(url.lower().endswith(ext) for ext in allowed_extensions):
+                # Se não tem extensão válida na URL, verificar se é um caminho válido
+                if '?' not in url:  # Se não tem query params, deve ter extensão válida
+                    raise ValueError(
+                        f'Formato de imagem não suportado. Use: {", ".join(allowed_extensions)}'
+                    )
+        
         return v
     
     @validator('duration')
