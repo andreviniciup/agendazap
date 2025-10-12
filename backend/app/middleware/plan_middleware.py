@@ -16,6 +16,11 @@ from app.dependencies import get_redis
 logger = logging.getLogger(__name__)
 
 
+def sanitize_url_for_log(url: str) -> str:
+    """Remove query strings e dados sensíveis de URLs para logs"""
+    return url.split("?")[0]
+
+
 class PlanLimitMiddleware(BaseHTTPMiddleware):
     """Middleware para verificar limites de planos em tempo real"""
     
@@ -56,8 +61,9 @@ class PlanLimitMiddleware(BaseHTTPMiddleware):
             # Se a resposta foi bem-sucedida e há um tipo de uso, incrementar
             if response.status_code in [200, 201] and usage_type:
                 # TODO: Implementar incremento de uso aqui
-                # Por enquanto, apenas log
-                logger.info(f"Uso detectado: {usage_type} - {request.url.path}")
+                # Por enquanto, apenas log (com URL sanitizada)
+                safe_url = sanitize_url_for_log(request.url.path)
+                logger.info(f"Uso detectado: {usage_type} - {safe_url}")
             
             return response
             

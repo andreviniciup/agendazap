@@ -48,13 +48,23 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configurar CORS
+# Configurar CORS de forma explícita e segura
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.ALLOWED_ORIGINS,  # Lista específica de origens permitidas
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],  # Métodos explícitos
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "DNT",
+        "Cache-Control",
+        "X-Requested-With"
+    ],  # Headers explícitos
+    max_age=3600,  # Cache de preflight por 1 hora
 )
 
 # Adicionar middleware de verificação de limites de planos
@@ -68,21 +78,31 @@ if settings.ENVIRONMENT == "production":
     )
 
 
+# Função auxiliar para sanitizar URLs em logs
+def sanitize_url_for_log(url: str) -> str:
+    """Remove query strings e dados sensíveis de URLs para logs"""
+    # Remover query strings (podem conter tokens, senhas, etc)
+    return url.split("?")[0]
+
+
 # Middleware de logging de requests
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Middleware para logar todas as requisições"""
+    """Middleware para logar todas as requisições de forma segura"""
     start_time = time.time()
     
+    # Sanitizar URL para log (remover query strings)
+    safe_url = sanitize_url_for_log(request.url.path)
+    
     # Log da requisição
-    logger.info(f"📥 {request.method} {request.url.path} - {request.client.host}")
+    logger.info(f"📥 {request.method} {safe_url} - {request.client.host if request.client else 'unknown'}")
     
     # Processar requisição
     response = await call_next(request)
     
     # Log da resposta
     process_time = time.time() - start_time
-    logger.info(f"📤 {request.method} {request.url.path} - {response.status_code} - {process_time:.3f}s")
+    logger.info(f"📤 {request.method} {safe_url} - {response.status_code} - {process_time:.3f}s")
     
     return response
 
