@@ -18,20 +18,52 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """Schema para criação de usuário"""
-    password: str = Field(..., min_length=8, max_length=100)
+    password: str = Field(..., min_length=12, max_length=128)
     whatsapp_number: Optional[str] = Field(None, pattern=r'^\+?[1-9]\d{1,14}$')
     
     @validator('password')
     def validate_password(cls, v):
-        """Validar força da senha"""
-        if len(v) < 8:
-            raise ValueError('Senha deve ter pelo menos 8 caracteres')
+        """Validar força da senha com requisitos rigorosos"""
+        # Comprimento mínimo
+        if len(v) < 12:
+            raise ValueError('Senha deve ter pelo menos 12 caracteres')
+        
+        # Verificar se contém letra maiúscula
         if not any(c.isupper() for c in v):
             raise ValueError('Senha deve conter pelo menos uma letra maiúscula')
+        
+        # Verificar se contém letra minúscula
         if not any(c.islower() for c in v):
             raise ValueError('Senha deve conter pelo menos uma letra minúscula')
+        
+        # Verificar se contém número
         if not any(c.isdigit() for c in v):
             raise ValueError('Senha deve conter pelo menos um número')
+        
+        # Verificar se contém caractere especial
+        special_chars = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+        if not any(c in special_chars for c in v):
+            raise ValueError('Senha deve conter pelo menos um caractere especial (!@#$%^&* etc)')
+        
+        # Verificar se não tem caracteres repetidos em sequência (mais de 3)
+        for i in range(len(v) - 3):
+            if v[i] == v[i+1] == v[i+2] == v[i+3]:
+                raise ValueError('Senha não pode ter mais de 3 caracteres iguais em sequência')
+        
+        # Verificar se não é uma senha comum
+        common_passwords = [
+            'password', '12345678', 'qwerty', 'abc123', 'password123',
+            'senha123', '123456789', 'admin123', 'letmein', 'welcome'
+        ]
+        if v.lower() in common_passwords:
+            raise ValueError('Senha muito comum. Escolha uma senha mais segura')
+        
+        # Verificar se não contém sequências óbvias
+        sequences = ['123456', 'abcdef', 'qwerty', '987654', 'fedcba']
+        for seq in sequences:
+            if seq in v.lower():
+                raise ValueError('Senha não pode conter sequências óbvias (123456, qwerty, etc)')
+        
         return v
     
     @validator('whatsapp_number')

@@ -3,9 +3,10 @@ Configurações da aplicação AgendaZap
 """
 
 import os
+import secrets
 from typing import List, Optional
 from pydantic_settings import BaseSettings
-from pydantic import validator
+from pydantic import validator, Field, SecretStr
 
 
 class Settings(BaseSettings):
@@ -17,7 +18,11 @@ class Settings(BaseSettings):
     
     # API
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str = Field(
+        ..., 
+        min_length=32,
+        description="Chave secreta para JWT. Gere com: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+    )
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
@@ -105,6 +110,37 @@ class Settings(BaseSettings):
     def validate_environment(cls, v):
         if v not in ["development", "staging", "production"]:
             raise ValueError("ENVIRONMENT deve ser: development, staging ou production")
+        return v
+    
+    @validator("SECRET_KEY")
+    def validate_secret_key(cls, v, values):
+        """Validar SECRET_KEY em produção"""
+        environment = values.get("ENVIRONMENT", "development")
+        
+        # Em produção, SECRET_KEY não pode ser a padrão
+        if environment == "production":
+            if len(v) < 32:
+                raise ValueError(
+                    "SECRET_KEY deve ter pelo menos 32 caracteres em produção. "
+                    "Gere uma chave segura com: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+                )
+            
+            # Verificar se não é uma chave óbvia
+            weak_keys = ["secret", "password", "change", "your-", "default", "test"]
+            if any(weak in v.lower() for weak in weak_keys):
+                raise ValueError(
+                    "SECRET_KEY parece ser uma chave fraca ou padrão. "
+                    "Use uma chave gerada aleatoriamente."
+                )
+        
+        return v
+    
+    @validator("DEBUG")
+    def validate_debug(cls, v, values):
+        """Garantir que DEBUG seja False em produção"""
+        environment = values.get("ENVIRONMENT", "development")
+        if environment == "production" and v is True:
+            raise ValueError("DEBUG deve ser False em produção")
         return v
     
     class Config:
