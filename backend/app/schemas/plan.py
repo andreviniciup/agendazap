@@ -113,3 +113,6 @@ class PlanDetails(BaseModel):
     popular: bool = False
     recommended: bool = False
 
+
+
+
