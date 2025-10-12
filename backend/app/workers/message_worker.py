@@ -355,3 +355,6 @@ class WorkerManager:
 # Instância global do gerenciador de workers
 worker_manager = WorkerManager()
 
+
+
+

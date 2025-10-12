@@ -60,3 +60,6 @@ if __name__ == "__main__":
     # Executar
     asyncio.run(main())
 
+
+
+
