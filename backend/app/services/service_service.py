@@ -15,6 +15,7 @@ from app.schemas.service import ServiceCreate, ServiceUpdate, ServiceSearch
 from app.schemas.service_category import ServiceCategoryCreate, ServiceCategoryUpdate
 from app.utils.enums import TemplateType
 from app.services.plan_service import PlanService
+from app.services.cache_service import cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,9 @@ class ServiceService:
             # Incrementar contador de uso
             await self.plan_service.increment_usage(str(user.id), "services", 1)
             
+            # Invalidar cache de serviços do usuário
+            cache_service.invalidate_user_services(user.id)
+            
             logger.info(f"Serviço criado: {service.name} para usuário {user.email}")
             return service
             
@@ -226,6 +230,96 @@ class ServiceService:
                 detail="Erro interno do servidor"
             )
     
+    def get_user_services(
+        self, 
+        user: User, 
+        use_cache: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Obter todos os serviços ativos do usuário com cache e fallback"""
+        try:
+            # Função para buscar do banco (fallback)
+            def fetch_from_database():
+                services = self.db.query(Service).filter(
+                    and_(
+                        Service.user_id == user.id,
+                        Service.is_active == True
+                    )
+                ).order_by(Service.sort_order, Service.name).all()
+                
+                # Serializar serviços para cache
+                services_data = []
+                for service in services:
+                    service_data = {
+                        "id": str(service.id),
+                        "name": service.name,
+                        "description": service.description,
+                        "duration": service.duration,
+                        "price": float(service.price) if service.price else None,
+                        "images": service.images or [],
+                        "credentials": service.credentials or [],
+                        "promotions": service.promotions or [],
+                        "custom_fields": service.custom_fields or {},
+                        "is_featured": service.is_featured,
+                        "category_id": str(service.category_id) if service.category_id else None,
+                        "category_name": service.category.name if service.category else None,
+                        "created_at": service.created_at.isoformat(),
+                        "updated_at": service.updated_at.isoformat()
+                    }
+                    services_data.append(service_data)
+                
+                return services_data
+            
+            # Tentar obter do cache primeiro
+            if use_cache:
+                cached_services = cache_service.get_user_services(user.id)
+                if cached_services:
+                    logger.debug(f"Serviços obtidos do cache para usuário {user.id}")
+                    return cached_services
+            
+            # Se não está no cache, buscar do banco
+            services_data = fetch_from_database()
+            
+            # Salvar no cache se disponível
+            if use_cache and cache_service.is_cache_healthy():
+                cache_service.set_user_services(user.id, services_data)
+                logger.debug(f"Serviços salvos no cache para usuário {user.id}")
+            
+            return services_data
+            
+        except Exception as e:
+            logger.error(f"Erro ao obter serviços do usuário: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno do servidor"
+            )
+    
+    def get_user_services_by_category(
+        self, 
+        user: User, 
+        category_id: Optional[UUID] = None,
+        use_cache: bool = True
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Obter serviços do usuário agrupados por categoria com cache"""
+        try:
+            all_services = self.get_user_services(user, use_cache)
+            
+            # Agrupar por categoria
+            services_by_category = {}
+            for service in all_services:
+                category_key = service.get("category_name") or "Sem categoria"
+                if category_key not in services_by_category:
+                    services_by_category[category_key] = []
+                services_by_category[category_key].append(service)
+            
+            return services_by_category
+            
+        except Exception as e:
+            logger.error(f"Erro ao obter serviços por categoria: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno do servidor"
+            )
+    
     def get_service(self, service_id: UUID, user: User) -> Service:
         """Obter serviço específico"""
         try:
@@ -281,6 +375,9 @@ class ServiceService:
             self.db.commit()
             self.db.refresh(service)
             
+            # Invalidar cache de serviços do usuário
+            cache_service.invalidate_user_services(user.id)
+            
             logger.info(f"Serviço atualizado: {service.name} para usuário {user.email}")
             return service
             
@@ -302,6 +399,9 @@ class ServiceService:
             # Soft delete
             service.is_active = False
             self.db.commit()
+            
+            # Invalidar cache de serviços do usuário
+            cache_service.invalidate_user_services(user.id)
             
             logger.info(f"Serviço deletado: {service.name} para usuário {user.email}")
             

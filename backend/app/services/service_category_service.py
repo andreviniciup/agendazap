@@ -274,3 +274,6 @@ class ServiceCategoryService:
                 detail="Erro interno do servidor"
             )
 
+
+
+

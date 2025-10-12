@@ -22,6 +22,7 @@ from app.utils.enums import AppointmentStatus
 from app.services.plan_service import PlanService
 from app.services.queue_service import MessageQueue
 from app.services.client_service import ClientService
+from app.services.cache_service import cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +221,10 @@ class AppointmentService:
             if self.message_queue:
                 await self._schedule_appointment_notifications(appointment, service)
             
+            # Invalidar cache de agenda para a data do agendamento
+            appointment_date = appointment.start_time.date()
+            cache_service.invalidate_user_agenda(user.id, appointment_date.isoformat())
+            
             logger.info(f"Agendamento criado: {appointment.client_name} para {appointment.start_time} - usuário {user.email}")
             return appointment
             
@@ -292,6 +297,10 @@ class AppointmentService:
             self.db.add(appointment)
             self.db.commit()
             self.db.refresh(appointment)
+            
+            # Invalidar cache de agenda para a data do agendamento
+            appointment_date = appointment.start_time.date()
+            cache_service.invalidate_user_agenda(user_id, appointment_date.isoformat())
             
             logger.info(f"Agendamento público criado: {appointment.client_name} para {appointment.start_time}")
             return appointment
@@ -396,6 +405,111 @@ class AppointmentService:
                 detail="Erro interno do servidor"
             )
     
+    def get_user_agenda(
+        self, 
+        user: User, 
+        target_date: date,
+        use_cache: bool = True
+    ) -> Dict[str, Any]:
+        """Obter agenda do usuário para uma data específica com cache e fallback"""
+        try:
+            date_str = target_date.isoformat()
+            
+            # Função para buscar do banco (fallback)
+            def fetch_from_database():
+                start_datetime = datetime.combine(target_date, time.min)
+                end_datetime = datetime.combine(target_date, time.max)
+                
+                appointments = self.db.query(Appointment).filter(
+                    and_(
+                        Appointment.user_id == user.id,
+                        Appointment.start_time >= start_datetime,
+                        Appointment.start_time <= end_datetime,
+                        Appointment.is_cancelled == False
+                    )
+                ).order_by(Appointment.start_time).all()
+                
+                # Organizar agenda por horário
+                agenda_data = {
+                    "date": date_str,
+                    "appointments": [],
+                    "total_appointments": len(appointments),
+                    "available_slots": self.get_available_slots(
+                        user.id, None, target_date
+                    ) if appointments else []
+                }
+                
+                for appointment in appointments:
+                    agenda_data["appointments"].append({
+                        "id": str(appointment.id),
+                        "client_name": appointment.client_name,
+                        "client_whatsapp": appointment.client_whatsapp,
+                        "service_name": appointment.service.name if appointment.service else "Serviço removido",
+                        "start_time": appointment.start_time.isoformat(),
+                        "end_time": appointment.end_time.isoformat(),
+                        "duration_minutes": appointment.duration_minutes,
+                        "status": appointment.status.value,
+                        "notes": appointment.notes,
+                        "is_confirmed": appointment.is_confirmed
+                    })
+                
+                return agenda_data
+            
+            # Tentar obter do cache primeiro
+            if use_cache:
+                cached_agenda = cache_service.get_user_agenda(user.id, date_str)
+                if cached_agenda:
+                    logger.debug(f"Agenda obtida do cache para usuário {user.id} na data {date_str}")
+                    return cached_agenda
+            
+            # Se não está no cache, buscar do banco
+            agenda_data = fetch_from_database()
+            
+            # Salvar no cache se disponível
+            if use_cache and cache_service.is_cache_healthy():
+                cache_service.set_user_agenda(user.id, date_str, agenda_data)
+                logger.debug(f"Agenda salva no cache para usuário {user.id} na data {date_str}")
+            
+            return agenda_data
+            
+        except Exception as e:
+            logger.error(f"Erro ao obter agenda do usuário: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno do servidor"
+            )
+    
+    def get_user_agenda_range(
+        self, 
+        user: User, 
+        start_date: date, 
+        end_date: date,
+        use_cache: bool = True
+    ) -> Dict[str, Any]:
+        """Obter agenda do usuário para um período com cache"""
+        try:
+            agenda_range = {}
+            current_date = start_date
+            
+            while current_date <= end_date:
+                agenda_data = self.get_user_agenda(user, current_date, use_cache)
+                agenda_range[current_date.isoformat()] = agenda_data
+                current_date += timedelta(days=1)
+            
+            return {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "agenda": agenda_range,
+                "total_days": len(agenda_range)
+            }
+            
+        except Exception as e:
+            logger.error(f"Erro ao obter agenda do usuário para período: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno do servidor"
+            )
+    
     def get_appointment(self, appointment_id: UUID, user: User) -> Appointment:
         """Obter agendamento específico"""
         try:
@@ -461,6 +575,15 @@ class AppointmentService:
             
             self.db.commit()
             self.db.refresh(appointment)
+            
+            # Invalidar cache de agenda para as datas afetadas
+            old_date = appointment.start_time.date()
+            if appointment_data.start_time and appointment_data.start_time != appointment.start_time:
+                new_date = appointment_data.start_time.date()
+                cache_service.invalidate_user_agenda(user.id, old_date.isoformat())
+                cache_service.invalidate_user_agenda(user.id, new_date.isoformat())
+            else:
+                cache_service.invalidate_user_agenda(user.id, old_date.isoformat())
             
             logger.info(f"Agendamento atualizado: {appointment.id} para usuário {user.email}")
             return appointment
@@ -539,6 +662,10 @@ class AppointmentService:
             self.db.commit()
             self.db.refresh(appointment)
             
+            # Invalidar cache de agenda para a data do agendamento
+            appointment_date = appointment.start_time.date()
+            cache_service.invalidate_user_agenda(user.id, appointment_date.isoformat())
+            
             # Agendar notificação de cancelamento
             if self.message_queue and appointment.service:
                 # Executar de forma assíncrona
@@ -571,6 +698,10 @@ class AppointmentService:
             appointment.status = AppointmentStatus.CANCELLED
             appointment.is_cancelled = True
             self.db.commit()
+            
+            # Invalidar cache de agenda para a data do agendamento
+            appointment_date = appointment.start_time.date()
+            cache_service.invalidate_user_agenda(user.id, appointment_date.isoformat())
             
             logger.info(f"Agendamento deletado: {appointment.id} para usuário {user.email}")
             
