@@ -19,6 +19,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserResponse
 from app.services.auth_service import AuthService
+from app.services.email_verification_service import EmailVerificationService
 from app.models.user import User
 
 router = APIRouter()
@@ -128,3 +129,80 @@ async def get_current_user_info(
 ):
     """Obter informações do usuário atual"""
     return UserResponse.from_orm(current_user)
+
+
+@router.post("/verify-email/{token}")
+async def verify_email(
+    token: str,
+    db: Session = Depends(get_db),
+    redis_client = Depends(get_redis)
+):
+    """Verificar email do usuário através do token"""
+    try:
+        verification_service = EmailVerificationService(db, redis_client)
+        result = await verification_service.verify_email_token(token)
+        
+        logger.info(f"Email verificado para usuário: {result.get('user_id')}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro na verificação de email: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.post("/resend-verification")
+async def resend_verification(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    redis_client = Depends(get_redis)
+):
+    """Reenviar email de verificação"""
+    try:
+        verification_service = EmailVerificationService(db, redis_client)
+        token = await verification_service.resend_verification_email(str(current_user.id))
+        
+        logger.info(f"Email de verificação reenviado para: {current_user.email}")
+        
+        # Em produção, aqui você enviaria um email real com o link de verificação
+        # Por enquanto, retornar o token (apenas para desenvolvimento)
+        return {
+            "message": "Email de verificação enviado",
+            "token": token  # REMOVER EM PRODUÇÃO - token deve ser enviado por email
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao reenviar verificação: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/verification-status")
+async def get_verification_status(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    redis_client = Depends(get_redis)
+):
+    """Verificar status de verificação do email"""
+    try:
+        verification_service = EmailVerificationService(db, redis_client)
+        status_info = verification_service.get_verification_status(current_user)
+        
+        return status_info
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter status de verificação: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
