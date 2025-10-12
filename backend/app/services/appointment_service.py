@@ -23,6 +23,7 @@ from app.services.plan_service import PlanService
 from app.services.queue_service import MessageQueue
 from app.services.client_service import ClientService
 from app.services.cache_service import cache_service
+from app.services.availability_service import AvailabilityService
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,12 @@ logger = logging.getLogger(__name__)
 class AppointmentService:
     """Serviço para operações relacionadas a agendamentos"""
     
-    def __init__(self, db: Session, plan_service: PlanService, message_queue: MessageQueue = None, client_service: ClientService = None):
+    def __init__(self, db: Session, plan_service: PlanService, message_queue: MessageQueue = None, client_service: ClientService = None, availability_service: AvailabilityService = None):
         self.db = db
         self.plan_service = plan_service
         self.message_queue = message_queue
         self.client_service = client_service
+        self.availability_service = availability_service
     
     def check_availability(
         self, 
@@ -45,10 +47,17 @@ class AppointmentService:
     ) -> Tuple[bool, Optional[str]]:
         """Verificar disponibilidade para um agendamento"""
         try:
-            # Calcular horário de fim
+            # 1. Verificar disponibilidade geral (horários, bloqueios, feriados)
+            if self.availability_service:
+                is_available, reason = self.availability_service.check_availability(
+                    str(user_id), start_time, duration_minutes
+                )
+                if not is_available:
+                    return False, reason
+            
+            # 2. Verificar conflitos com outros agendamentos
             end_time = start_time + timedelta(minutes=duration_minutes)
             
-            # Verificar conflitos com outros agendamentos
             conflicting_appointments = self.db.query(Appointment).filter(
                 and_(
                     Appointment.user_id == user_id,
@@ -93,7 +102,13 @@ class AppointmentService:
     ) -> List[time]:
         """Obter horários disponíveis para uma data específica"""
         try:
-            # Horários de funcionamento padrão (8h às 18h)
+            # Usar o serviço de disponibilidade se disponível
+            if self.availability_service:
+                return self.availability_service.get_available_slots(
+                    str(user_id), target_date, duration_minutes
+                )
+            
+            # Fallback para lógica antiga
             start_hour = 8
             end_hour = 18
             slot_interval = 30  # Intervalo de 30 minutos

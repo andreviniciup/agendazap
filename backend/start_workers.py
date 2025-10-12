@@ -24,14 +24,18 @@ async def main():
     """Função principal para iniciar workers"""
     try:
         from app.workers import worker_manager
+        from app.services.counter_reset_service import counter_reset_service
         
         logger.info("🚀 Iniciando workers de mensagens...")
         
-        # Iniciar workers
+        # Iniciar workers de mensagens
         await worker_manager.start_workers()
         
+        # Iniciar serviço de reset de contadores
+        await counter_reset_service.start_monthly_reset_scheduler()
+        
         # Manter o script rodando
-        logger.info("✅ Workers iniciados com sucesso! Pressione Ctrl+C para parar.")
+        logger.info("✅ Workers e serviços iniciados com sucesso! Pressione Ctrl+C para parar.")
         
         # Aguardar indefinidamente
         while True:
@@ -40,7 +44,8 @@ async def main():
     except KeyboardInterrupt:
         logger.info("🛑 Parando workers...")
         await worker_manager.stop_workers()
-        logger.info("✅ Workers parados com sucesso!")
+        await counter_reset_service.stop_monthly_reset_scheduler()
+        logger.info("✅ Workers e serviços parados com sucesso!")
     except Exception as e:
         logger.error(f"❌ Erro ao iniciar workers: {e}")
         sys.exit(1)
@@ -59,6 +64,7 @@ if __name__ == "__main__":
     
     # Executar
     asyncio.run(main())
+
 
 
 

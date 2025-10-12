@@ -8,6 +8,11 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from uuid import UUID
 import httpx
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from twilio.rest import Client as TwilioClient
+from twilio.base.exceptions import TwilioException
 
 from app.config import settings
 
@@ -15,12 +20,20 @@ logger = logging.getLogger(__name__)
 
 
 class WhatsAppService:
-    """Serviço para envio de mensagens WhatsApp"""
+    """Serviço para envio de mensagens WhatsApp via Twilio"""
     
     def __init__(self):
-        self.base_url = getattr(settings, 'WHATSAPP_API_URL', 'https://api.whatsapp.com')
-        self.api_token = getattr(settings, 'WHATSAPP_API_TOKEN', '')
-        self.phone_number_id = getattr(settings, 'WHATSAPP_PHONE_NUMBER_ID', '')
+        # Configurações do Twilio
+        self.account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
+        self.auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
+        self.whatsapp_from = getattr(settings, 'TWILIO_WHATSAPP_FROM', '')
+        
+        # Inicializar cliente Twilio
+        if self.account_sid and self.auth_token:
+            self.twilio_client = TwilioClient(self.account_sid, self.auth_token)
+        else:
+            self.twilio_client = None
+            logger.warning("Twilio não configurado - mensagens WhatsApp não serão enviadas")
     
     async def send_message(
         self, 
@@ -28,8 +41,16 @@ class WhatsAppService:
         message: str, 
         template: str = None
     ) -> Dict[str, Any]:
-        """Enviar mensagem WhatsApp"""
+        """Enviar mensagem WhatsApp via Twilio"""
         try:
+            # Verificar se Twilio está configurado
+            if not self.twilio_client:
+                return {
+                    "success": False,
+                    "error": "Twilio não configurado",
+                    "to_number": to_number
+                }
+            
             # Limpar número do WhatsApp
             clean_number = self._clean_phone_number(to_number)
             
@@ -40,42 +61,35 @@ class WhatsAppService:
                     "to_number": to_number
                 }
             
-            # Preparar payload
-            if template:
-                payload = self._create_template_payload(clean_number, template, message)
-            else:
-                payload = self._create_text_payload(clean_number, message)
+            # Formatar número para WhatsApp
+            whatsapp_to = f"whatsapp:{clean_number}"
+            whatsapp_from = f"whatsapp:{self.whatsapp_from}"
             
-            # Enviar mensagem
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                headers = {
-                    "Authorization": f"Bearer {self.api_token}",
-                    "Content-Type": "application/json"
-                }
-                
-                response = await client.post(
-                    f"{self.base_url}/v1/messages",
-                    json=payload,
-                    headers=headers
+            # Enviar mensagem via Twilio
+            try:
+                message_obj = self.twilio_client.messages.create(
+                    body=message,
+                    from_=whatsapp_from,
+                    to=whatsapp_to
                 )
                 
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.info(f"Mensagem WhatsApp enviada para {clean_number}")
-                    return {
-                        "success": True,
-                        "message_id": result.get("messages", [{}])[0].get("id"),
-                        "to_number": clean_number,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                else:
-                    error_msg = f"Erro ao enviar WhatsApp: {response.status_code} - {response.text}"
-                    logger.error(error_msg)
-                    return {
-                        "success": False,
-                        "error": error_msg,
-                        "to_number": clean_number
-                    }
+                logger.info(f"Mensagem WhatsApp enviada para {clean_number} - SID: {message_obj.sid}")
+                return {
+                    "success": True,
+                    "message_id": message_obj.sid,
+                    "to_number": clean_number,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "status": message_obj.status
+                }
+                
+            except TwilioException as e:
+                error_msg = f"Erro do Twilio: {str(e)}"
+                logger.error(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "to_number": clean_number
+                }
                     
         except Exception as e:
             error_msg = f"Erro ao enviar mensagem WhatsApp: {e}"
@@ -109,41 +123,6 @@ class WhatsAppService:
         # Se não conseguir identificar, retornar None
         return None
     
-    def _create_text_payload(self, to_number: str, message: str) -> Dict[str, Any]:
-        """Criar payload para mensagem de texto"""
-        return {
-            "messaging_product": "whatsapp",
-            "to": to_number,
-            "type": "text",
-            "text": {
-                "body": message
-            }
-        }
-    
-    def _create_template_payload(self, to_number: str, template: str, message: str) -> Dict[str, Any]:
-        """Criar payload para mensagem com template"""
-        return {
-            "messaging_product": "whatsapp",
-            "to": to_number,
-            "type": "template",
-            "template": {
-                "name": template,
-                "language": {
-                    "code": "pt_BR"
-                },
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": [
-                            {
-                                "type": "text",
-                                "text": message
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
     
     async def send_appointment_confirmation(
         self, 
@@ -252,7 +231,7 @@ Para agendar novamente, é só nos chamar! 😊
 
 
 class EmailService:
-    """Serviço para envio de emails"""
+    """Serviço para envio de emails via SMTP"""
     
     def __init__(self):
         self.smtp_server = getattr(settings, 'SMTP_SERVER', 'smtp.gmail.com')
@@ -260,6 +239,11 @@ class EmailService:
         self.smtp_username = getattr(settings, 'SMTP_USERNAME', '')
         self.smtp_password = getattr(settings, 'SMTP_PASSWORD', '')
         self.from_email = getattr(settings, 'FROM_EMAIL', '')
+        self.from_name = getattr(settings, 'FROM_NAME', 'AgendaZap')
+        
+        # Verificar se SMTP está configurado
+        if not all([self.smtp_username, self.smtp_password, self.from_email]):
+            logger.warning("SMTP não configurado - emails não serão enviados")
     
     async def send_email(
         self, 
@@ -268,12 +252,38 @@ class EmailService:
         body: str, 
         is_html: bool = False
     ) -> Dict[str, Any]:
-        """Enviar email"""
+        """Enviar email via SMTP"""
         try:
-            # Por enquanto, apenas log da funcionalidade
-            # Em produção, implementar com biblioteca como aiosmtplib
-            logger.info(f"Email enviado para {to_email}: {subject}")
+            # Verificar se SMTP está configurado
+            if not all([self.smtp_username, self.smtp_password, self.from_email]):
+                return {
+                    "success": False,
+                    "error": "SMTP não configurado",
+                    "to_email": to_email
+                }
             
+            # Criar mensagem
+            message = MIMEMultipart('alternative')
+            message['From'] = f"{self.from_name} <{self.from_email}>"
+            message['To'] = to_email
+            message['Subject'] = subject
+            
+            # Adicionar corpo da mensagem
+            if is_html:
+                message.attach(MIMEText(body, 'html', 'utf-8'))
+            else:
+                message.attach(MIMEText(body, 'plain', 'utf-8'))
+            
+            # Conectar e enviar
+            smtp = aiosmtplib.SMTP(hostname=self.smtp_server, port=self.smtp_port)
+            await smtp.connect()
+            await smtp.starttls()
+            await smtp.login(self.smtp_username, self.smtp_password)
+            
+            await smtp.send_message(message)
+            await smtp.quit()
+            
+            logger.info(f"Email enviado para {to_email}: {subject}")
             return {
                 "success": True,
                 "to_email": to_email,
@@ -289,6 +299,88 @@ class EmailService:
                 "error": error_msg,
                 "to_email": to_email
             }
+    
+    async def send_appointment_confirmation_email(
+        self, 
+        appointment_id: UUID, 
+        client_name: str, 
+        client_email: str,
+        service_name: str,
+        appointment_time: datetime
+    ) -> Dict[str, Any]:
+        """Enviar email de confirmação de agendamento"""
+        subject = "Agendamento Confirmado - AgendaZap"
+        
+        html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #2c3e50;">🎉 Agendamento Confirmado!</h2>
+                
+                <p>Olá <strong>{client_name}</strong>!</p>
+                
+                <p>Seu agendamento foi confirmado com sucesso:</p>
+                
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="margin-top: 0; color: #2c3e50;">📅 Detalhes do Agendamento</h3>
+                    <p><strong>Serviço:</strong> {service_name}</p>
+                    <p><strong>Data e Hora:</strong> {appointment_time.strftime('%d/%m/%Y às %H:%M')}</p>
+                </div>
+                
+                <p>Se precisar reagendar ou cancelar, entre em contato conosco.</p>
+                
+                <p>Obrigado pela preferência! 🙏</p>
+                
+                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                <p style="font-size: 12px; color: #666;">
+                    Este é um email automático do sistema AgendaZap.
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return await self.send_email(client_email, subject, html_body, is_html=True)
+    
+    async def send_appointment_reminder_email(
+        self, 
+        appointment_id: UUID, 
+        client_name: str, 
+        client_email: str,
+        service_name: str,
+        appointment_time: datetime
+    ) -> Dict[str, Any]:
+        """Enviar email de lembrete de agendamento"""
+        subject = "Lembrete de Agendamento - AgendaZap"
+        
+        html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #2c3e50;">⏰ Lembrete de Agendamento</h2>
+                
+                <p>Olá <strong>{client_name}</strong>!</p>
+                
+                <p>Este é um lembrete do seu agendamento:</p>
+                
+                <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+                    <h3 style="margin-top: 0; color: #856404;">📅 Detalhes do Agendamento</h3>
+                    <p><strong>Serviço:</strong> {service_name}</p>
+                    <p><strong>Data e Hora:</strong> {appointment_time.strftime('%d/%m/%Y às %H:%M')}</p>
+                </div>
+                
+                <p>Nos vemos em breve! 😊</p>
+                
+                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                <p style="font-size: 12px; color: #666;">
+                    Este é um email automático do sistema AgendaZap.
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return await self.send_email(client_email, subject, html_body, is_html=True)
 
 
 class NotificationService:
@@ -338,10 +430,19 @@ class NotificationService:
         
         # Enviar Email (se configurado)
         if client_email and self.email_service:
-            subject = f"Agendamento {notification_type.title()}"
-            body = f"Notificação de agendamento para {client_name}"
+            if notification_type == "confirmation":
+                result = await self.email_service.send_appointment_confirmation_email(
+                    appointment_id, client_name, client_email, service_name, appointment_time
+                )
+            elif notification_type == "reminder":
+                result = await self.email_service.send_appointment_reminder_email(
+                    appointment_id, client_name, client_email, service_name, appointment_time
+                )
+            else:
+                subject = f"Agendamento {notification_type.title()}"
+                body = f"Notificação de agendamento para {client_name}"
+                result = await self.email_service.send_email(client_email, subject, body)
             
-            result = await self.email_service.send_email(client_email, subject, body)
             results["email"] = result
         
         return results
@@ -368,6 +469,7 @@ class NotificationService:
             results["email"] = result
         
         return results
+
 
 
 

@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import init_db
-from app.api import auth, users, services, appointments, clients, webhooks, queues, cache
+from app.api import auth, users, services, appointments, clients, webhooks, queues, cache, public
 from app.middleware.plan_middleware import PlanLimitMiddleware
 
 # Configurar logging
@@ -124,6 +124,7 @@ app.include_router(clients.router, prefix="/api/clients", tags=["Clientes"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(queues.router, prefix="/api/queues", tags=["Filas"])
 app.include_router(cache.router, prefix="/api/cache", tags=["Cache"])
+app.include_router(public.router, prefix="/public", tags=["API Pública"])
 
 
 # Root endpoint

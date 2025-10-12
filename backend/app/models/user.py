@@ -33,6 +33,8 @@ class User(Base):
     service_categories = relationship("ServiceCategory", back_populates="user", cascade="all, delete-orphan")
     appointments = relationship("Appointment", back_populates="user", cascade="all, delete-orphan")
     clients = relationship("Client", back_populates="user", cascade="all, delete-orphan")
+    availability_rule = relationship("AvailabilityRule", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    holidays = relationship("Holiday", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, template_type={self.template_type})>"

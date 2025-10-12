@@ -296,10 +296,32 @@ class MessageWorker:
     ):
         """Atualizar status de notificação no banco de dados"""
         try:
-            # Por enquanto, apenas log
-            # Em produção, implementar atualização no banco
-            success = result.get("whatsapp", {}).get("success", False)
-            logger.info(f"Status {status_field} atualizado para agendamento {appointment_id}: {success}")
+            from app.database import get_db
+            from app.models.appointment import Appointment
+            from sqlalchemy.orm import Session
+            
+            # Obter sessão do banco
+            db = next(get_db())
+            
+            # Buscar agendamento
+            appointment = db.query(Appointment).filter(
+                Appointment.id == appointment_id
+            ).first()
+            
+            if appointment:
+                # Atualizar status baseado no resultado
+                whatsapp_success = result.get("whatsapp", {}).get("success", False)
+                email_success = result.get("email", {}).get("success", False)
+                
+                if status_field == "confirmation_sent":
+                    appointment.confirmation_sent = whatsapp_success or email_success
+                elif status_field == "reminder_sent":
+                    appointment.reminder_sent = whatsapp_success or email_success
+                
+                db.commit()
+                logger.info(f"Status {status_field} atualizado para agendamento {appointment_id}: {whatsapp_success or email_success}")
+            else:
+                logger.warning(f"Agendamento {appointment_id} não encontrado para atualização de status")
             
         except Exception as e:
             logger.error(f"Erro ao atualizar status de notificação: {e}")
@@ -354,6 +376,7 @@ class WorkerManager:
 
 # Instância global do gerenciador de workers
 worker_manager = WorkerManager()
+
 
 
 
