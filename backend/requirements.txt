@@ -55,3 +55,10 @@ slowapi==0.1.9
 # Configuração
 pydantic-settings==2.1.0
 
+# Machine Learning (para Mini ML do bot)
+torch>=2.0.0
+transformers>=4.30.0
+datasets>=2.14.0
+scikit-learn>=1.3.0
+pandas>=2.0.0
+
