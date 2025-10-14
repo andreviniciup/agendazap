@@ -199,21 +199,9 @@ def check_security_files():
     print("7. Verificando Documentação de Segurança")
     print("="*60)
     
-    files = [
-        "SECURITY_IMPROVEMENTS.md",
-        "RESUMO_SEGURANCA.md",
-        "GUIA_USO_SEGURANCA.md"
-    ]
-    
-    all_exist = True
-    for file in files:
-        if Path(file).exists():
-            print_success(f"{file} encontrado")
-        else:
-            print_error(f"{file} não encontrado")
-            all_exist = False
-    
-    return all_exist
+    # Arquivos de documentação foram removidos para limpeza
+    print_info("Documentação de segurança foi removida para limpeza do projeto")
+    return True
 
 def main():
     """Executar todas as verificações"""

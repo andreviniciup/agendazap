@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: str = "noreply@agendazap.com"
     
     # n8n
+    USE_N8N: bool = False
     N8N_WEBHOOK_URL: str = "http://localhost:5678/webhook"
     N8N_API_KEY: Optional[str] = None
     
