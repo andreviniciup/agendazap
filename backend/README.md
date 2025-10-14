@@ -230,7 +230,7 @@ curl -X POST "http://localhost:8000/api/appointments/" \
 
 ## 📚 **Documentação Completa**
 
-Para documentação detalhada, consulte: [DOCUMENTATION.md](./DOCUMENTATION.md)
+Para documentação detalhada, consulte os comentários no código e a documentação da API em `/docs`.
 
 ## 🎯 **Status do Projeto**
 
