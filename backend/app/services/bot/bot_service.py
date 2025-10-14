@@ -16,6 +16,13 @@ from app.services.bot.affirmation_analyzer import AffirmationAnalyzer, Affirmati
 from app.services.bot import templates
 from app.services.bot import parser
 from app.services.bot.smart_templates import get_smart_response, get_follow_up_questions, get_contextual_response
+
+# Componentes modulares integrados
+from app.services.bot.enhanced_parser import EnhancedParser
+from app.services.bot.bot_metrics import BotMetrics
+from app.services.bot.components.intent_detector import IntentDetector, ContextAwareIntentDetector
+from app.services.bot.components.slot_filler import SlotFiller
+from app.services.bot.components.response_generator import ResponseGenerator
 from app.database import get_db
 from sqlalchemy.orm import Session
 from app.services.appointment_service import AppointmentService
@@ -81,6 +88,33 @@ class BotService:
         self.collector = DataCollector()  # Sistema de coleta de dados para ML
         self.classifier = BotClassifier()  # Classificador ML (se disponível)
         self.affirmation_analyzer = AffirmationAnalyzer()  # Analisador de afirmações
+        
+        # Componentes modulares integrados
+        self.enhanced_parser = EnhancedParser()
+        self.metrics = BotMetrics()
+        
+        # Intent Detector híbrido
+        self.intent_detector = IntentDetector(
+            intent_engine=self.intent_engine,
+            classifier=self.classifier,
+            config={"ml_threshold": 0.7, "rule_threshold": 0.6}
+        )
+        
+        # Context-Aware Intent Detector
+        self.context_aware_detector = ContextAwareIntentDetector(
+            intent_engine=self.intent_engine,
+            classifier=self.classifier,
+            config={"ml_threshold": 0.7, "rule_threshold": 0.6}
+        )
+        
+        # Slot Filler
+        self.slot_filler = SlotFiller(parser=self.enhanced_parser, db_session=None)
+        
+        # Response Generator
+        self.response_generator = ResponseGenerator(
+            templates=templates,
+            affirmation_analyzer=self.affirmation_analyzer
+        )
 
     async def process(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         # Normalize incoming
@@ -147,36 +181,26 @@ class BotService:
                     return {"to_number": wa_number, "message": created_msg}
                 return {"to_number": wa_number, "message": templates.pick("confirm", tone, date=slots.get("date", ""), time=slots.get("time", ""), service_name="o serviço")}
 
-        # 1. TENTA REGRA (rápido)
-        intent, entities, confidence = self.intent_engine.detect(text)
-        source = "rule"
-        
-        # Debug: mostrar resultado da regra
-        print(f"🔍 REGRA: {intent} ({confidence:.2%}) - '{text}'")
-        
-        # 2. SEMPRE TENTA ML PARA FRASES LONGAS OU SE REGRA INCERTA
-        use_ml = (
-            self.classifier.ready and (
-                confidence < 0.8 or  # Regra incerta
-                len(text.split()) > 3 or  # Frase longa
-                confidence < 0.6  # Regra com baixa confiança
-            )
+        # Detectar intenção usando componentes modulares
+        intent, confidence, source = await self.context_aware_detector.detect(
+            text, 
+            context=conv
         )
+        print(f"🎯 INTENÇÃO: {intent} ({confidence:.2%}) via {source}")
         
-        if use_ml:
-            intent_ml, confidence_ml = self.classifier.classify(text)
-            print(f"🤖 ML: {intent_ml} ({confidence_ml:.2%})")
-            
-            # Se ML mais confiante que regra OU se regra muito incerta
-            if confidence_ml > 0.6 and (confidence_ml > confidence or confidence < 0.5):
-                intent = intent_ml
-                confidence = confidence_ml
-                source = "ml"
-                print(f"✅ USANDO ML: {intent} ({confidence:.2%})")
-            else:
-                print(f"❌ MANTENDO REGRA: {intent} ({confidence:.2%})")
-        else:
-            print(f"⏭️ PULANDO ML (classifier.ready={self.classifier.ready})")
+        # Registrar métricas
+        self.metrics._metrics["total_messages"] += 1
+        if intent not in self.metrics._metrics["total_intents"]:
+            self.metrics._metrics["total_intents"][intent] = 0
+        self.metrics._metrics["total_intents"][intent] += 1
+        
+        # Atualizar confiança média
+        total = self.metrics._metrics["total_messages"]
+        current_avg = self.metrics._metrics.get("average_confidence", 0.0)
+        self.metrics._metrics["average_confidence"] = (current_avg * (total - 1) + confidence) / total
+        
+        # Extrair entidades usando enhanced parser
+        entities = self.enhanced_parser.extract_entities(text)
 
         # Determinar qualidade de etiqueta para ML
         if confidence > 0.8:
@@ -248,6 +272,18 @@ class BotService:
         conv["last_intent"] = intent
         conv["fail_count"] = 0
         await self.state.save(wa_number, conv)
+
+        if intent == Intent.GREETING:
+            # Usar template inteligente para saudação
+            message = get_smart_response(
+                intent="greeting", 
+                confidence=confidence,
+                context={
+                    "user_name": slots.get("first_name", ""),
+                    "service_name": "nossos serviços"
+                }
+            )
+            return {"to_number": wa_number, "message": message}
 
         if intent == Intent.HUMAN:
             # Usar template inteligente para atendimento humano
@@ -362,9 +398,61 @@ class BotService:
             
             return {"to_number": wa_number, "message": message}
 
+        if intent == Intent.HOURS:
+            # Usar template inteligente para horários de funcionamento
+            message = get_smart_response(
+                intent="business_hours",
+                confidence=confidence,
+                context={
+                    "user_name": slots.get("first_name", ""),
+                    "service_name": "nossos serviços"
+                }
+            )
+            return {"to_number": wa_number, "message": message}
+
+        if intent == Intent.ADDRESS:
+            # Usar template inteligente para endereço
+            message = get_smart_response(
+                intent="address",
+                confidence=confidence,
+                context={
+                    "user_name": slots.get("first_name", ""),
+                    "service_name": "nossos serviços"
+                }
+            )
+            return {"to_number": wa_number, "message": message}
+
         if intent in (Intent.AVAILABILITY, Intent.SCHEDULE, Intent.RESCHEDULE):
-            # Slot filling simplificado: coletar data/hora e confirmar
-            return await self._handle_schedule_like(wa_number, conv, intent, tone)
+            # Usar SlotFiller modular para preenchimento de slots
+            slots_result = await self.slot_filler.fill_appointment_slots(
+                conversation=conv,
+                user_message=text
+            )
+            conv.update(slots_result)
+            await self.state.save(wa_number, conv)
+            
+            # Tentar criar agendamento se slots completos
+            if self._are_slots_complete(conv.get("slots", {})):
+                appointment_result = await self._try_create_appointment(
+                    conv.get("slots", {}), 
+                    tone
+                )
+                if appointment_result:
+                    # Agendamento criado com sucesso
+                    self.metrics._metrics["successful_appointments"] += 1
+                    conv["state"] = "idle"
+                    conv["slots"] = {}
+                    await self.state.save(wa_number, conv)
+                    return {"to_number": wa_number, "message": appointment_result}
+            
+            # Gerar resposta contextualizada usando ResponseGenerator
+            response = self.response_generator.generate(
+                intent=intent,
+                confidence=confidence,
+                context=conv,
+                conversation_state=conv
+            )
+            return {"to_number": wa_number, "message": response}
 
         # Default fallback - usar template inteligente com análise de afirmação
         base_message = get_smart_response(
@@ -477,6 +565,19 @@ class BotService:
         except Exception:
             return None
 
+    def _are_slots_complete(self, slots: Dict[str, Any]) -> bool:
+        """Verificar se todos os slots necessários estão preenchidos"""
+        required_slots = ["user_id", "service_id", "date", "time", "client_whatsapp"]
+        return all(slots.get(slot) for slot in required_slots)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Obter métricas do bot"""
+        return self.metrics.get_stats()
+    
+    def reset_metrics(self):
+        """Resetar métricas"""
+        self.metrics.reset_stats()
+
     async def _list_services(self, slots: Dict[str, Any], include_description: bool = False) -> Optional[str]:
         try:
             user_id = slots.get("user_id")
@@ -530,6 +631,19 @@ class BotService:
         except Exception:
             return None
 
+    def _are_slots_complete(self, slots: Dict[str, Any]) -> bool:
+        """Verificar se todos os slots necessários estão preenchidos"""
+        required_slots = ["user_id", "service_id", "date", "time", "client_whatsapp"]
+        return all(slots.get(slot) for slot in required_slots)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Obter métricas do bot"""
+        return self.metrics.get_stats()
+    
+    def reset_metrics(self):
+        """Resetar métricas"""
+        self.metrics.reset_stats()
+
     async def _resolve_user_id(self, slots: Dict[str, Any], db: Session) -> Optional[str]:
         user_id = slots.get("user_id")
         if user_id:
@@ -571,6 +685,19 @@ class BotService:
         except Exception:
             return None
 
+    def _are_slots_complete(self, slots: Dict[str, Any]) -> bool:
+        """Verificar se todos os slots necessários estão preenchidos"""
+        required_slots = ["user_id", "service_id", "date", "time", "client_whatsapp"]
+        return all(slots.get(slot) for slot in required_slots)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Obter métricas do bot"""
+        return self.metrics.get_stats()
+    
+    def reset_metrics(self):
+        """Resetar métricas"""
+        self.metrics.reset_stats()
+
     def _truncate_description(self, desc: Optional[str], limit: int = 120) -> str:
         if not desc:
             return ""
@@ -598,6 +725,19 @@ class BotService:
             return None
         except Exception:
             return None
+
+    def _are_slots_complete(self, slots: Dict[str, Any]) -> bool:
+        """Verificar se todos os slots necessários estão preenchidos"""
+        required_slots = ["user_id", "service_id", "date", "time", "client_whatsapp"]
+        return all(slots.get(slot) for slot in required_slots)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Obter métricas do bot"""
+        return self.metrics.get_stats()
+    
+    def reset_metrics(self):
+        """Resetar métricas"""
+        self.metrics.reset_stats()
 
     async def _try_create_appointment(self, slots: Dict[str, Any], tone: str) -> Optional[str]:
         try:
@@ -644,5 +784,18 @@ class BotService:
 
         except Exception:
             return None
+
+    def _are_slots_complete(self, slots: Dict[str, Any]) -> bool:
+        """Verificar se todos os slots necessários estão preenchidos"""
+        required_slots = ["user_id", "service_id", "date", "time", "client_whatsapp"]
+        return all(slots.get(slot) for slot in required_slots)
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Obter métricas do bot"""
+        return self.metrics.get_stats()
+    
+    def reset_metrics(self):
+        """Resetar métricas"""
+        self.metrics.reset_stats()
 
 
