@@ -2,7 +2,7 @@
 Endpoints de webhooks (n8n)
 """
 
-from fastapi import APIRouter, Request, HTTPException, status
+from fastapi import APIRouter, Request, HTTPException, status, Depends
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 import logging
@@ -11,10 +11,14 @@ from datetime import datetime
 from uuid import UUID
 
 from app.database import get_db
+from app.config import settings
 from app.models.appointment import Appointment
+from app.models.user import User
+from app.models.service import Service
 from app.models.user import User
 from app.services.queue_service import QueueService
 from app.services.notification_service import NotificationService, WhatsAppService, EmailService
+from app.services.bot.bot_service import BotService
 from app.dependencies import get_redis
 
 router = APIRouter()
@@ -25,8 +29,8 @@ logger = logging.getLogger(__name__)
 async def appointment_webhook(request: Request, db: Session = Depends(get_db)):
     """Webhook para eventos de agendamento do n8n"""
     try:
-    data = await request.json()
-    logger.info(f"Webhook de agendamento recebido: {data}")
+        data = await request.json()
+        logger.info(f"Webhook de agendamento recebido: {data}")
         
         # Validar dados obrigatórios
         required_fields = ["event_type", "appointment_id", "user_id"]
@@ -49,7 +53,7 @@ async def appointment_webhook(request: Request, db: Session = Depends(get_db)):
         
         if not appointment:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_F,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="Agendamento não encontrado"
             )
         
@@ -90,9 +94,11 @@ async def appointment_webhook(request: Request, db: Session = Depends(get_db)):
 @router.post("/sync")
 async def sync_webhook(request: Request, db: Session = Depends(get_db)):
     """Webhook para sincronização de dados do n8n"""
+    if not settings.USE_N8N:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Endpoint desabilitado")
     try:
-    data = await request.json()
-    logger.info(f"Webhook de sincronização recebido: {data}")
+        data = await request.json()
+        logger.info(f"Webhook de sincronização recebido: {data}")
         
         # Validar dados obrigatórios
         if "sync_type" not in data:
@@ -135,57 +141,72 @@ async def sync_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/message")
 async def message_webhook(request: Request):
-    """Webhook para mensagens do n8n"""
+    """Webhook de mensagens: aceita formato n8n (quando USE_N8N=true) ou provedor direto (Twilio/Meta)."""
     try:
-    data = await request.json()
-    logger.info(f"Webhook de mensagem recebido: {data}")
-        
-        # Validar dados obrigatórios
-        required_fields = ["message_type", "recipient", "content"]
-        for field in required_fields:
-            if field not in data:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Campo obrigatório ausente: {field}"
-                )
-        
-        message_type = data["message_type"]
-        recipient = data["recipient"]
-        content = data["content"]
-        
-        # Obter serviços de notificação
+        data = await request.json()
+        logger.info(f"Webhook de mensagem recebido: {data}")
+
         redis_client = await get_redis()
         if not redis_client:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Serviço de mensagens não disponível"
             )
-        
+
         queue_service = QueueService(redis_client)
-        whatsapp_service = WhatsAppService()
-        email_service = EmailService()
-        notification_service = NotificationService(whatsapp_service, email_service)
-        
-        # Processar baseado no tipo de mensagem
-        if message_type == "whatsapp":
-            result = await _send_whatsapp_message(recipient, content, data, queue_service)
-        elif message_type == "email":
-            result = await _send_email_message(recipient, content, data, queue_service)
-        elif message_type == "bulk":
-            result = await _send_bulk_message(recipient, content, data, queue_service)
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Tipo de mensagem inválido: {message_type}"
-            )
-        
+
+        # Caminho n8n (retrocompatível)
+        if settings.USE_N8N and all(k in data for k in ["message_type", "recipient", "content"]):
+            message_type = data["message_type"]
+            recipient = data["recipient"]
+            content = data["content"]
+            if message_type == "whatsapp":
+                result = await _send_whatsapp_message(recipient, content, data, queue_service)
+            elif message_type == "email":
+                result = await _send_email_message(recipient, content, data, queue_service)
+            elif message_type == "bulk":
+                result = await _send_bulk_message(recipient, content, data, queue_service)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Tipo de mensagem inválido: {message_type}"
+                )
+            return {
+                "success": True,
+                "message": f"Mensagem {message_type} processada (n8n)",
+                "result": result,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        # Caminho direto: Twilio/Meta → normalizar e decidir
+        normalized = _normalize_incoming_provider_payload(data)
+        if not normalized:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payload inválido")
+
+        # Resolver user_id/service_id por número de destino (To)
+        try:
+            resolved = _resolve_user_and_defaults(normalized)
+            normalized.update(resolved)
+        except Exception as e:
+            logger.warning(f"Falha ao resolver user/service pelo destino: {e}")
+
+        bot = BotService(redis_client)
+        decision = await bot.process(normalized)
+
+        await queue_service.schedule_whatsapp_message(
+            to_number=decision.get("to_number"),
+            message=decision.get("message"),
+            template=None,
+            delay_seconds=0
+        )
+
         return {
             "success": True,
-            "message": f"Mensagem {message_type} processada com sucesso",
-            "result": result,
+            "message": "Mensagem processada pelo bot",
+            "result": {"queued": True, "to": decision.get("to_number")},
             "timestamp": datetime.utcnow().isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -206,59 +227,64 @@ async def _handle_appointment_created(appointment: Appointment, data: Dict[str, 
     # Por exemplo, enviar notificações, atualizar cache, etc.
     
     # Exemplo: Enviar notificação para o n8n
-    await _notify_n8n_workflow("appointment_created", {
-        "appointment_id": str(appointment.id),
-        "user_id": str(appointment.user_id),
-        "client_name": appointment.client_name,
-        "start_time": appointment.start_time.isoformat(),
-        "service_name": appointment.service.name if appointment.service else "Serviço removido"
-    })
+    if settings.USE_N8N:
+        await _notify_n8n_workflow("appointment_created", {
+            "appointment_id": str(appointment.id),
+            "user_id": str(appointment.user_id),
+            "client_name": appointment.client_name,
+            "start_time": appointment.start_time.isoformat(),
+            "service_name": appointment.service.name if appointment.service else "Serviço removido"
+        })
 
 
 async def _handle_appointment_updated(appointment: Appointment, data: Dict[str, Any]):
     """Processar atualização de agendamento"""
     logger.info(f"Processando atualização de agendamento: {appointment.id}")
     
-    await _notify_n8n_workflow("appointment_updated", {
-        "appointment_id": str(appointment.id),
-        "user_id": str(appointment.user_id),
-        "changes": data.get("changes", {}),
-        "updated_at": appointment.updated_at.isoformat()
-    })
+    if settings.USE_N8N:
+        await _notify_n8n_workflow("appointment_updated", {
+            "appointment_id": str(appointment.id),
+            "user_id": str(appointment.user_id),
+            "changes": data.get("changes", {}),
+            "updated_at": appointment.updated_at.isoformat()
+        })
 
 
 async def _handle_appointment_cancelled(appointment: Appointment, data: Dict[str, Any]):
     """Processar cancelamento de agendamento"""
     logger.info(f"Processando cancelamento de agendamento: {appointment.id}")
     
-    await _notify_n8n_workflow("appointment_cancelled", {
-        "appointment_id": str(appointment.id),
-        "user_id": str(appointment.user_id),
-        "cancellation_reason": data.get("cancellation_reason"),
-        "cancelled_at": datetime.utcnow().isoformat()
-    })
+    if settings.USE_N8N:
+        await _notify_n8n_workflow("appointment_cancelled", {
+            "appointment_id": str(appointment.id),
+            "user_id": str(appointment.user_id),
+            "cancellation_reason": data.get("cancellation_reason"),
+            "cancelled_at": datetime.utcnow().isoformat()
+        })
 
 
 async def _handle_appointment_confirmed(appointment: Appointment, data: Dict[str, Any]):
     """Processar confirmação de agendamento"""
     logger.info(f"Processando confirmação de agendamento: {appointment.id}")
     
-    await _notify_n8n_workflow("appointment_confirmed", {
-        "appointment_id": str(appointment.id),
-        "user_id": str(appointment.user_id),
-        "confirmed_at": datetime.utcnow().isoformat()
-    })
+    if settings.USE_N8N:
+        await _notify_n8n_workflow("appointment_confirmed", {
+            "appointment_id": str(appointment.id),
+            "user_id": str(appointment.user_id),
+            "confirmed_at": datetime.utcnow().isoformat()
+        })
 
 
 async def _handle_appointment_completed(appointment: Appointment, data: Dict[str, Any]):
     """Processar conclusão de agendamento"""
     logger.info(f"Processando conclusão de agendamento: {appointment.id}")
     
-    await _notify_n8n_workflow("appointment_completed", {
-        "appointment_id": str(appointment.id),
-        "user_id": str(appointment.user_id),
-        "completed_at": datetime.utcnow().isoformat()
-    })
+    if settings.USE_N8N:
+        await _notify_n8n_workflow("appointment_completed", {
+            "appointment_id": str(appointment.id),
+            "user_id": str(appointment.user_id),
+            "completed_at": datetime.utcnow().isoformat()
+        })
 
 
 async def _sync_appointments(data: Dict[str, Any], db: Session):
@@ -403,4 +429,91 @@ async def _notify_n8n_workflow(event_type: str, data: Dict[str, Any]):
                 
     except Exception as e:
         logger.error(f"Erro ao notificar workflow n8n: {e}")
+
+
+def _normalize_incoming_provider_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normaliza payloads comuns de Twilio/Meta para um formato interno.
+
+    Saída esperada: { "from": str, "text": str, "attachments": list, "timestamp": str }
+    """
+    try:
+        # Twilio WhatsApp: Body, From, To
+        if "Body" in data and "From" in data:
+            return {
+                "from": data.get("From"),
+                "text": data.get("Body", ""),
+                "attachments": [],
+                "to": data.get("To"),
+                "timestamp": data.get("Timestamp") or datetime.utcnow().isoformat(),
+            }
+
+        # Meta/Cloud API Webhook (simplificado)
+        if "entry" in data and isinstance(data["entry"], list):
+            try:
+                changes = data["entry"][0]["changes"][0]["value"]
+                messages = changes.get("messages") or []
+                if messages:
+                    msg = messages[0]
+                    return {
+                        "from": msg.get("from"),
+                        "text": (msg.get("text") or {}).get("body", ""),
+                        "attachments": [],
+                        "to": changes.get("metadata", {}).get("phone_number_id"),
+                        "timestamp": msg.get("timestamp") or datetime.utcnow().isoformat(),
+                    }
+            except Exception:
+                pass
+
+        return {}
+    except Exception:
+        return {}
+
+
+def _clean_phone(num: str) -> str:
+    return "".join(ch for ch in (num or "") if ch.isdigit())
+
+
+def _resolve_user_and_defaults(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve user_id via número de destino (To) e escolhe um service_id padrão."""
+    db: Session = next(get_db())
+    to_raw = normalized.get("to")
+    to_clean = _clean_phone(to_raw)
+    if to_clean.startswith("55") and len(to_clean) == 13:
+        wa_format = f"+{to_clean}"
+    elif to_clean:
+        wa_format = f"+{to_clean}"
+    else:
+        wa_format = None
+
+    user = None
+    if wa_format:
+        user = db.query(User).filter(User.whatsapp_number == wa_format).first()
+
+    if not user:
+        return {}
+
+    # tentar serviço pelo histórico do cliente (último agendamento)
+    last_appt = None
+    try:
+        client_whatsapp = normalized.get("from")
+        if client_whatsapp:
+            last_appt = db.query(Appointment).filter(
+                Appointment.user_id == user.id,
+                Appointment.client_whatsapp == client_whatsapp,
+                Appointment.is_cancelled == False
+            ).order_by(Appointment.start_time.desc()).first()
+    except Exception:
+        last_appt = None
+
+    if last_appt and last_appt.service_id:
+        svc = db.query(Service).filter(Service.id == last_appt.service_id, Service.is_active == True).first()
+    else:
+        # escolher um serviço ativo como fallback (primeiro por ordem)
+        svc = db.query(Service).filter(Service.user_id == user.id, Service.is_active == True).order_by(Service.sort_order, Service.name).first()
+
+    return {
+        "user_id": str(user.id),
+        "service_id": str(svc.id) if svc else None,
+        "client_whatsapp": normalized.get("from"),
+    }
 
