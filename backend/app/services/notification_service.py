@@ -386,9 +386,9 @@ class EmailService:
 class NotificationService:
     """Serviço principal de notificações"""
     
-    def __init__(self, whatsapp_service: WhatsAppService, email_service: EmailService):
-        self.whatsapp_service = whatsapp_service
-        self.email_service = email_service
+    def __init__(self, whatsapp_service: WhatsAppService = None, email_service: EmailService = None):
+        self.whatsapp_service = whatsapp_service or WhatsAppService()
+        self.email_service = email_service or EmailService()
     
     async def send_appointment_notification(
         self, 
@@ -467,6 +467,126 @@ class NotificationService:
         if to_email and subject and body:
             result = await self.email_service.send_email(to_email, subject, body)
             results["email"] = result
+        
+        return results
+    
+    async def send_handoff_alert(
+        self,
+        provider_email: str,
+        provider_whatsapp: str = None,
+        client_whatsapp: str = None,
+        reason: str = "human_requested",
+        conversation_snippet: List[Dict[str, str]] = None,
+        alert_channels: List[str] = None,
+        metadata: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Enviar alerta de handoff ao prestador
+        
+        Args:
+            provider_email: Email do prestador
+            provider_whatsapp: WhatsApp do prestador (opcional)
+            client_whatsapp: WhatsApp do cliente
+            reason: Razão do handoff
+            conversation_snippet: Trecho da conversa
+            alert_channels: Canais para enviar alerta
+            metadata: Metadados adicionais
+        
+        Returns:
+            Resultados do envio
+        """
+        results = {}
+        alert_channels = alert_channels or ["email"]
+        
+        # Mapear razões para mensagens amigáveis
+        reason_messages = {
+            "human_requested": "Cliente solicitou falar com um profissional",
+            "media": "Cliente enviou mídia (áudio/imagem/vídeo/documento)",
+            "low_confidence": "Bot com baixa confiança na resposta",
+            "unknown": "Intenção não compreendida"
+        }
+        
+        reason_text = reason_messages.get(reason, reason)
+        
+        # Construir snippet da conversa
+        snippet_text = ""
+        if conversation_snippet:
+            snippet_lines = []
+            for item in conversation_snippet[-5:]:  # Últimas 5 interações
+                user_msg = item.get("text", "")
+                bot_msg = item.get("response", "")
+                if user_msg:
+                    snippet_lines.append(f"Cliente: {user_msg[:100]}")
+                if bot_msg:
+                    snippet_lines.append(f"Bot: {bot_msg[:100]}")
+            snippet_text = "\n".join(snippet_lines)
+        
+        # Enviar email se solicitado
+        if "email" in alert_channels and provider_email:
+            subject = f"🔔 Alerta: Cliente {client_whatsapp or 'desconhecido'} precisa de atendimento"
+            
+            html_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #d32f2f;">🔔 Alerta de Atendimento</h2>
+                    
+                    <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin: 20px 0;">
+                        <h3 style="margin-top: 0; color: #856404;">Cliente precisa de atendimento</h3>
+                        <p><strong>Cliente:</strong> {client_whatsapp or "Não identificado"}</p>
+                        <p><strong>Motivo:</strong> {reason_text}</p>
+                    </div>
+                    
+                    {f'''
+                    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <h3 style="margin-top: 0; color: #2c3e50;">📝 Contexto da Conversa</h3>
+                        <pre style="white-space: pre-wrap; font-size: 13px; color: #666;">{snippet_text}</pre>
+                    </div>
+                    ''' if snippet_text else ''}
+                    
+                    <p><strong>Próximos passos:</strong></p>
+                    <ul>
+                        <li>Entre em contato com o cliente pelo WhatsApp: {client_whatsapp}</li>
+                        <li>Revise o contexto da conversa acima</li>
+                        <li>Responda prontamente para melhor experiência do cliente</li>
+                    </ul>
+                    
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                    <p style="font-size: 12px; color: #666;">
+                        Este é um alerta automático do sistema AgendaZap.
+                    </p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            email_result = await self.email_service.send_email(
+                provider_email,
+                subject,
+                html_body,
+                is_html=True
+            )
+            results["email"] = email_result
+        
+        # Enviar WhatsApp se solicitado
+        if "whatsapp" in alert_channels and provider_whatsapp:
+            whatsapp_message = f"""
+🔔 *Alerta de Atendimento*
+
+Cliente {client_whatsapp or "não identificado"} precisa de atendimento.
+
+*Motivo:* {reason_text}
+
+{f"*Últimas mensagens:*\n{snippet_text[:500]}" if snippet_text else ""}
+
+Responda o quanto antes para melhor experiência! 🙏
+            """.strip()
+            
+            whatsapp_result = await self.whatsapp_service.send_message(
+                provider_whatsapp,
+                whatsapp_message
+            )
+            results["whatsapp"] = whatsapp_result
         
         return results
 
