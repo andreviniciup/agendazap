@@ -2,7 +2,7 @@
 Gerenciamento de estado de conversa no Redis com timeout automático
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 from datetime import datetime, timedelta
 import logging
@@ -162,6 +162,53 @@ class ConversationState:
         
         await self.save(wa_number, state)
     
+    async def mark_handoff(
+        self, 
+        wa_number: str,
+        reason: str = "human_requested",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Marcar handoff para atendimento humano
+        
+        Args:
+            wa_number: Número do WhatsApp
+            reason: Motivo do handoff (human_requested, media, low_confidence, etc)
+            metadata: Metadados adicionais
+        """
+        state = await self.load(wa_number)
+        
+        state["handoff"] = {
+            "requested": True,
+            "reason": reason,
+            "timestamp": datetime.utcnow().isoformat(),
+            "metadata": metadata or {}
+        }
+        
+        await self.save(wa_number, state)
+        logger.info(f"🤝 Handoff marcado para {wa_number} - Razão: {reason}")
+    
+    async def get_conversation_snippet(
+        self, 
+        wa_number: str,
+        limit: int = 5
+    ) -> List[Dict[str, str]]:
+        """
+        Obter snippet das últimas mensagens da conversa
+        
+        Args:
+            wa_number: Número do WhatsApp
+            limit: Número de mensagens a retornar
+            
+        Returns:
+            Lista com últimas interações
+        """
+        state = await self.load(wa_number)
+        history = state.get("history", [])
+        
+        # Retornar últimas N interações
+        return history[-limit:] if history else []
+    
     def _default_state(self) -> Dict[str, Any]:
         """Estado padrão para nova conversa"""
         return {
@@ -170,6 +217,7 @@ class ConversationState:
             "slots": {},
             "fail_count": 0,
             "history": [],
+            "handoff": None,
             "last_update": datetime.utcnow().isoformat(),
             "created_at": datetime.utcnow().isoformat(),
         }
