@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 import logging
 
 from app.database import get_db
-from app.core.security import get_current_user
+from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.cache_service import cache_service
 from app.services.appointment_service import AppointmentService

@@ -195,3 +195,6 @@ class ContextAwareIntentDetector(IntentDetector):
         # Padrão: retornar base
         return base_intent, base_conf
 
+
+
+

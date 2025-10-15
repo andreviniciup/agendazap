@@ -9,7 +9,11 @@ import logging
 
 from app.database import get_db
 from app.dependencies import get_current_active_user, get_plan_limits, get_plan_service
-from app.schemas.user import UserResponse, UserUpdate, UserPlanInfo
+from app.schemas.user import (
+    UserResponse, UserUpdate, UserPlanInfo,
+    NotificationPreferencesUpdate, BusinessProfileUpdate,
+    NotificationPreferences, BusinessProfileMetadata
+)
 from app.schemas.plan import PlanInfo, PlanUpgradeRequest, PlanUpgradeResponse, PlanComparison
 from app.models.user import User
 from app.utils.enums import PlanType
@@ -72,6 +76,129 @@ async def update_profile(
         raise
     except Exception as e:
         logger.error(f"Erro ao atualizar perfil: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.patch("/preferences/notifications")
+async def update_notification_preferences(
+    preferences: NotificationPreferencesUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Atualizar preferências de notificação do prestador"""
+    try:
+        # Obter preferências atuais ou criar novo dict
+        current_prefs = current_user.notification_preferences or {}
+        
+        # Atualizar apenas os campos fornecidos
+        update_data = preferences.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            if field == "quiet_hours" and value:
+                current_prefs[field] = value.dict()
+            elif value is not None:
+                current_prefs[field] = value
+        
+        # Salvar
+        current_user.notification_preferences = current_prefs
+        db.commit()
+        db.refresh(current_user)
+        
+        logger.info(f"Preferências de notificação atualizadas para usuário: {current_user.email}")
+        return {
+            "success": True,
+            "message": "Preferências atualizadas com sucesso",
+            "preferences": current_prefs
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar preferências: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/preferences/notifications")
+async def get_notification_preferences(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Obter preferências de notificação do prestador"""
+    try:
+        prefs = current_user.notification_preferences or {}
+        
+        # Aplicar defaults
+        default_prefs = {
+            "alert_channels": ["email"],
+            "handoff_threshold": 0.5,
+            "trigger_on_media": True,
+            "include_conversation_snippet": True
+        }
+        
+        return {**default_prefs, **prefs}
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter preferências: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.patch("/profile/business")
+async def update_business_profile(
+    profile: BusinessProfileUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Atualizar perfil do negócio"""
+    try:
+        # Obter metadados atuais ou criar novo dict
+        current_metadata = current_user.profile_metadata or {}
+        
+        # Atualizar apenas os campos fornecidos
+        update_data = profile.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            if value is not None:
+                current_metadata[field] = value
+        
+        # Salvar
+        current_user.profile_metadata = current_metadata
+        db.commit()
+        db.refresh(current_user)
+        
+        logger.info(f"Perfil do negócio atualizado para usuário: {current_user.email}")
+        return {
+            "success": True,
+            "message": "Perfil do negócio atualizado com sucesso",
+            "metadata": current_metadata
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar perfil do negócio: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/profile/business")
+async def get_business_profile(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Obter perfil do negócio"""
+    try:
+        metadata = current_user.profile_metadata or {}
+        return metadata
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter perfil do negócio: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno do servidor"

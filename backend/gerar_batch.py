@@ -58,3 +58,6 @@ print(f"\n📊 TOTAL GERADO: {total} exemplos")
 print(f"📊 TOTAL NO BANCO: {stats['total_examples']}")
 print(f"📊 PRONTOS PARA TREINO: {stats['ready_to_train']}")
 
+
+
+

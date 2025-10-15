@@ -5,7 +5,7 @@ Modelo de usuário (provedor de serviços)
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Enum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -25,6 +25,11 @@ class User(Base):
     plan_type = Column(Enum(PlanType), default=PlanType.FREE, nullable=False)
     is_active = Column(String(1), default='Y', nullable=False)  # Y/N para compatibilidade
     is_verified = Column(String(1), default='N', nullable=False)  # Y/N para compatibilidade
+    
+    # Metadados e preferências
+    notification_preferences = Column(JSONB, nullable=True)  # Preferências de notificação
+    profile_metadata = Column(JSONB, nullable=True)  # Metadados do perfil do negócio
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     

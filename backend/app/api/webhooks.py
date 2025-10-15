@@ -17,7 +17,7 @@ from app.models.user import User
 from app.models.service import Service
 from app.models.user import User
 from app.services.queue_service import QueueService
-from app.services.notification_service import NotificationService, WhatsAppService, EmailService
+# Nota: Importações de serviços de notificação são feitas sob demanda dentro das funções
 from app.services.bot.bot_service import BotService
 from app.dependencies import get_redis
 

@@ -239,3 +239,6 @@ class TestConversationState:
         assert status["current_state"] == "asking_date"
         assert status["seconds_since_update"] >= 600  # 10 minutos
 
+
+
+

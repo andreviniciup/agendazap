@@ -68,3 +68,8 @@ coverage.xml
 
 # Docker
 .dockerignore
+
+# ML Models and training data
+backend/training_data/models/
+backend/training_data/*.csv
+backend/.pymon

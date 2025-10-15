@@ -3,7 +3,7 @@ Schemas Pydantic para usuários
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field, validator
 from uuid import UUID
 
@@ -134,3 +134,88 @@ class UserPlanInfo(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class QuietHours(BaseModel):
+    """Schema para horários silenciosos"""
+    start: str = Field(..., pattern=r'^([01]\d|2[0-3]):([0-5]\d)$', description="Hora início (HH:MM)")
+    end: str = Field(..., pattern=r'^([01]\d|2[0-3]):([0-5]\d)$', description="Hora fim (HH:MM)")
+
+
+class NotificationPreferences(BaseModel):
+    """Schema para preferências de notificação do prestador"""
+    alert_channels: List[str] = Field(
+        default=["email"],
+        description="Canais de alerta (email, whatsapp)"
+    )
+    quiet_hours: Optional[QuietHours] = Field(
+        None,
+        description="Horários silenciosos"
+    )
+    handoff_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Limiar de confiança para acionar handoff"
+    )
+    trigger_on_media: bool = Field(
+        default=True,
+        description="Acionar handoff ao detectar mídia"
+    )
+    include_conversation_snippet: bool = Field(
+        default=True,
+        description="Incluir trecho da conversa no alerta"
+    )
+    
+    @validator('alert_channels')
+    def validate_channels(cls, v):
+        """Validar canais permitidos"""
+        allowed = {'email', 'whatsapp'}
+        for channel in v:
+            if channel not in allowed:
+                raise ValueError(f'Canal inválido: {channel}. Permitidos: {allowed}')
+        return v
+
+
+class BusinessProfileMetadata(BaseModel):
+    """Schema para metadados do perfil do negócio"""
+    description: Optional[str] = Field(None, max_length=1000, description="Descrição do negócio")
+    regions: Optional[List[str]] = Field(None, description="Regiões de atendimento")
+    has_parking: Optional[bool] = Field(None, description="Tem estacionamento")
+    allow_companion: Optional[bool] = Field(None, description="Aceita acompanhante")
+    payment_methods: Optional[List[str]] = Field(None, description="Formas de pagamento")
+    cancel_policy: Optional[Dict[str, Any]] = Field(None, description="Política de cancelamento")
+    work_location: Optional[str] = Field(None, description="Local de trabalho (studio, domicilio, ambos)")
+    languages: Optional[List[str]] = Field(None, description="Idiomas atendidos")
+    
+    @validator('payment_methods')
+    def validate_payment_methods(cls, v):
+        """Validar formas de pagamento"""
+        if not v:
+            return v
+        allowed = {'dinheiro', 'pix', 'cartao', 'debito', 'credito', 'transferencia'}
+        for method in v:
+            if method.lower() not in allowed:
+                raise ValueError(f'Forma de pagamento inválida: {method}')
+        return v
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    """Schema para atualização de preferências de notificação"""
+    alert_channels: Optional[List[str]] = None
+    quiet_hours: Optional[QuietHours] = None
+    handoff_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    trigger_on_media: Optional[bool] = None
+    include_conversation_snippet: Optional[bool] = None
+
+
+class BusinessProfileUpdate(BaseModel):
+    """Schema para atualização do perfil do negócio"""
+    description: Optional[str] = Field(None, max_length=1000)
+    regions: Optional[List[str]] = None
+    has_parking: Optional[bool] = None
+    allow_companion: Optional[bool] = None
+    payment_methods: Optional[List[str]] = None
+    cancel_policy: Optional[Dict[str, Any]] = None
+    work_location: Optional[str] = None
+    languages: Optional[List[str]] = None

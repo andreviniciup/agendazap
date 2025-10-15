@@ -13,3 +13,6 @@ os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("ALLOWED_ORIGINS", '["http://localhost:3000"]')
 os.environ.setdefault("ALLOWED_HOSTS", '["localhost"]')
 os.environ.setdefault("USE_N8N", "false")
+
+
+

@@ -157,3 +157,53 @@ class ServiceTemplateValidation(BaseModel):
     requires_credentials: bool
     max_images: int
     custom_fields_schema: Optional[Dict[str, Any]] = None
+
+
+class ServiceMetadata(BaseModel):
+    """Schema para metadados de serviço"""
+    category: Optional[str] = Field(None, description="Categoria do serviço")
+    requirements: Optional[List[str]] = Field(None, description="Requisitos do cliente")
+    post_care: Optional[List[str]] = Field(None, description="Cuidados pós-atendimento")
+    location_type: Optional[str] = Field(None, description="Tipo de local (studio, domicilio, ambos)")
+    materials_included: Optional[bool] = Field(None, description="Materiais inclusos")
+    contraindications: Optional[List[str]] = Field(None, description="Contraindicações")
+    preparation: Optional[str] = Field(None, description="Preparação necessária")
+
+
+class NotificationConfig(BaseModel):
+    """Schema para configuração de notificações de um serviço"""
+    offset_hours: int = Field(..., ge=0, le=720, description="Horas antes do agendamento")
+
+
+class NotificationSettings(BaseModel):
+    """Schema para configurações de notificação por serviço"""
+    reminders: Optional[List[NotificationConfig]] = Field(
+        None,
+        description="Lembretes automáticos"
+    )
+    confirmation: Optional[NotificationConfig] = Field(
+        None,
+        description="Pedido de confirmação"
+    )
+    feedback: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Configuração de feedback"
+    )
+
+
+class ServiceMetadataUpdate(BaseModel):
+    """Schema para atualização de metadados de serviço"""
+    category: Optional[str] = None
+    requirements: Optional[List[str]] = None
+    post_care: Optional[List[str]] = None
+    location_type: Optional[str] = None
+    materials_included: Optional[bool] = None
+    contraindications: Optional[List[str]] = None
+    preparation: Optional[str] = None
+
+
+class ServiceNotificationSettingsUpdate(BaseModel):
+    """Schema para atualização de configurações de notificação"""
+    reminders: Optional[List[NotificationConfig]] = None
+    confirmation: Optional[NotificationConfig] = None
+    feedback: Optional[Dict[str, Any]] = None

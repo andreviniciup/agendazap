@@ -50,6 +50,11 @@ class Service(Base):
     credentials = Column(String(255), nullable=True)  # credenciais opcionais para consulta
     promotions = Column(Text, nullable=True)  # promoções opcionais para tabela
     custom_fields = Column(JSONB, nullable=True)  # campos customizados baseados no template
+    
+    # Metadados e configurações
+    service_metadata = Column(JSONB, nullable=True)  # Metadados do serviço (requisitos, pós-cuidado, etc)
+    notification_settings = Column(JSONB, nullable=True)  # Configurações de notificações
+    
     is_active = Column(Boolean, default=True, nullable=False)
     is_featured = Column(Boolean, default=False, nullable=False)  # serviço em destaque
     sort_order = Column(Integer, default=0, nullable=False)  # ordem de exibição

@@ -11,7 +11,8 @@ from app.database import get_db
 from app.dependencies import get_current_active_user, get_service_service, get_service_category_service
 from app.schemas.service import (
     ServiceCreate, ServiceUpdate, ServiceResponse, ServiceList, ServiceStats,
-    ServiceSearch, ServiceBulkUpdate, ServiceTemplateValidation
+    ServiceSearch, ServiceBulkUpdate, ServiceTemplateValidation,
+    ServiceMetadataUpdate, ServiceNotificationSettingsUpdate
 )
 from app.schemas.service_category import (
     ServiceCategoryCreate, ServiceCategoryUpdate, ServiceCategoryResponse,
@@ -261,6 +262,185 @@ async def delete_service(
         raise
     except Exception as e:
         logger.error(f"Erro ao deletar serviço: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.patch("/{service_id}/metadata")
+async def update_service_metadata(
+    service_id: UUID,
+    metadata: ServiceMetadataUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Atualizar metadados do serviço"""
+    try:
+        from app.models.service import Service
+        
+        # Buscar serviço
+        service = db.query(Service).filter(
+            Service.id == service_id,
+            Service.user_id == current_user.id
+        ).first()
+        
+        if not service:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Serviço não encontrado"
+            )
+        
+        # Obter metadados atuais ou criar novo dict
+        current_metadata = service.service_metadata or {}
+        
+        # Atualizar apenas os campos fornecidos
+        update_data = metadata.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            if value is not None:
+                current_metadata[field] = value
+        
+        # Salvar
+        service.service_metadata = current_metadata
+        db.commit()
+        db.refresh(service)
+        
+        logger.info(f"Metadados do serviço {service_id} atualizados")
+        return {
+            "success": True,
+            "message": "Metadados atualizados com sucesso",
+            "metadata": current_metadata
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar metadados: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/{service_id}/metadata")
+async def get_service_metadata(
+    service_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Obter metadados do serviço"""
+    try:
+        from app.models.service import Service
+        
+        service = db.query(Service).filter(
+            Service.id == service_id,
+            Service.user_id == current_user.id
+        ).first()
+        
+        if not service:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Serviço não encontrado"
+            )
+        
+        return service.service_metadata or {}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter metadados: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.patch("/{service_id}/notifications")
+async def update_service_notifications(
+    service_id: UUID,
+    settings: ServiceNotificationSettingsUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Atualizar configurações de notificação do serviço"""
+    try:
+        from app.models.service import Service
+        
+        # Buscar serviço
+        service = db.query(Service).filter(
+            Service.id == service_id,
+            Service.user_id == current_user.id
+        ).first()
+        
+        if not service:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Serviço não encontrado"
+            )
+        
+        # Obter configurações atuais ou criar novo dict
+        current_settings = service.notification_settings or {}
+        
+        # Atualizar apenas os campos fornecidos
+        update_data = settings.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            if value is not None:
+                if field == "reminders" and value:
+                    current_settings[field] = [r.dict() for r in value]
+                elif field == "confirmation" and value:
+                    current_settings[field] = value.dict()
+                else:
+                    current_settings[field] = value
+        
+        # Salvar
+        service.notification_settings = current_settings
+        db.commit()
+        db.refresh(service)
+        
+        logger.info(f"Configurações de notificação do serviço {service_id} atualizadas")
+        return {
+            "success": True,
+            "message": "Configurações de notificação atualizadas com sucesso",
+            "settings": current_settings
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar configurações: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno do servidor"
+        )
+
+
+@router.get("/{service_id}/notifications")
+async def get_service_notifications(
+    service_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Obter configurações de notificação do serviço"""
+    try:
+        from app.models.service import Service
+        
+        service = db.query(Service).filter(
+            Service.id == service_id,
+            Service.user_id == current_user.id
+        ).first()
+        
+        if not service:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Serviço não encontrado"
+            )
+        
+        return service.notification_settings or {}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter configurações: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno do servidor"

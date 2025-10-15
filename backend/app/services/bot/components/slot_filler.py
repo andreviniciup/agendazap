@@ -280,3 +280,6 @@ class SlotFiller:
         """Verificar se todos os slots necessários estão preenchidos"""
         return len(self.get_missing_slots(slots)) == 0
 
+
+
+

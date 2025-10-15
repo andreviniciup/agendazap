@@ -220,3 +220,6 @@ if __name__ == "__main__":
         print("\n\n👋 Programa encerrado!")
     except Exception as e:
         print(f"\n❌ Erro: {e}")
+
+
+

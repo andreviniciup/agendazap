@@ -293,3 +293,6 @@ class AffirmationAnalyzer:
             return False
         
         return True
+
+
+

@@ -151,3 +151,6 @@ class TestBotMetrics:
         assert "Mensagens:" in result
         assert "Confiança média:" in result
 
+
+
+

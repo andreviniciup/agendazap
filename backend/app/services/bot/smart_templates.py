@@ -397,3 +397,6 @@ def get_contextual_response(
             return f"{base_response} Vi que você prefere horários de {preferred_time}. Vou te mostrar opções nesse período!"
     
     return base_response
+
+
+
