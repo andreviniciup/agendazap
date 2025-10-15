@@ -184,14 +184,131 @@ async def message_webhook(request: Request):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payload inválido")
 
         # Resolver user_id/service_id por número de destino (To)
+        user_id = None
         try:
             resolved = _resolve_user_and_defaults(normalized)
             normalized.update(resolved)
+            user_id = resolved.get("user_id")
         except Exception as e:
             logger.warning(f"Falha ao resolver user/service pelo destino: {e}")
+        
+        # Detectar mídia e acionar handoff se necessário
+        media_type = normalized.get("media_type")
+        if media_type:
+            logger.info(f"📎 Mídia detectada: {media_type}")
+            
+            # Buscar preferências do usuário
+            handoff_triggered = False
+            if user_id:
+                try:
+                    from app.database import get_db
+                    db = next(get_db())
+                    user = db.query(User).filter(User.id == user_id).first()
+                    
+                    if user:
+                        prefs = user.notification_preferences or {}
+                        trigger_on_media = prefs.get("trigger_on_media", True)
+                        
+                        if trigger_on_media:
+                            # Acionar handoff
+                            from app.services.notification_service import NotificationService
+                            notification_service = NotificationService()
+                            
+                            # Obter snippet da conversa
+                            from app.services.bot.conversation_state import ConversationState
+                            conv_state = ConversationState(redis_client)
+                            snippet = await conv_state.get_conversation_snippet(
+                                normalized.get("from"),
+                                limit=5
+                            )
+                            
+                            # Enviar alerta
+                            alert_channels = prefs.get("alert_channels", ["email"])
+                            await notification_service.send_handoff_alert(
+                                provider_email=user.email,
+                                provider_whatsapp=user.whatsapp_number,
+                                client_whatsapp=normalized.get("from"),
+                                reason="media",
+                                conversation_snippet=snippet,
+                                alert_channels=alert_channels,
+                                metadata={"media_type": media_type}
+                            )
+                            
+                            handoff_triggered = True
+                            logger.info(f"✅ Handoff acionado para {user.email} - mídia: {media_type}")
+                except Exception as e:
+                    logger.error(f"Erro ao processar handoff de mídia: {e}")
+            
+            # Responder ao cliente
+            from app.services.bot import templates
+            now = datetime.utcnow()
+            tone = "night" if templates.is_night(now) else "day"
+            media_names = {
+                "audio": "seu áudio",
+                "image": "sua imagem",
+                "video": "seu vídeo",
+                "document": "seu documento"
+            }
+            response_message = templates.pick(
+                "media_handoff",
+                tone,
+                media_type=media_names.get(media_type, "a mídia")
+            )
+            
+            await queue_service.schedule_whatsapp_message(
+                to_number=normalized.get("from"),
+                message=response_message,
+                template=None,
+                delay_seconds=0
+            )
+            
+            return {
+                "success": True,
+                "message": "Mídia detectada - handoff acionado",
+                "result": {"queued": True, "handoff": handoff_triggered, "media_type": media_type},
+                "timestamp": datetime.utcnow().isoformat()
+            }
 
+        # Processar texto normalmente com o bot
         bot = BotService(redis_client)
         decision = await bot.process(normalized)
+        
+        # Se o bot marcou handoff, enviar alerta ao prestador
+        if decision.get("handoff") and user_id:
+            try:
+                from app.database import get_db
+                db = next(get_db())
+                user = db.query(User).filter(User.id == user_id).first()
+                
+                if user:
+                    prefs = user.notification_preferences or {}
+                    
+                    # Obter snippet da conversa
+                    from app.services.bot.conversation_state import ConversationState
+                    conv_state = ConversationState(redis_client)
+                    snippet = await conv_state.get_conversation_snippet(
+                        normalized.get("from"),
+                        limit=5
+                    )
+                    
+                    # Enviar alerta
+                    from app.services.notification_service import NotificationService
+                    notification_service = NotificationService()
+                    alert_channels = prefs.get("alert_channels", ["email"])
+                    
+                    await notification_service.send_handoff_alert(
+                        provider_email=user.email,
+                        provider_whatsapp=user.whatsapp_number,
+                        client_whatsapp=normalized.get("from"),
+                        reason=decision.get("handoff_reason", "unknown"),
+                        conversation_snippet=snippet,
+                        alert_channels=alert_channels,
+                        metadata=decision.get("metadata", {})
+                    )
+                    
+                    logger.info(f"✅ Handoff alert sent to {user.email}")
+            except Exception as e:
+                logger.error(f"Erro ao enviar alerta de handoff: {e}")
 
         await queue_service.schedule_whatsapp_message(
             to_number=decision.get("to_number"),
@@ -203,7 +320,11 @@ async def message_webhook(request: Request):
         return {
             "success": True,
             "message": "Mensagem processada pelo bot",
-            "result": {"queued": True, "to": decision.get("to_number")},
+            "result": {
+                "queued": True,
+                "to": decision.get("to_number"),
+                "handoff": decision.get("handoff", False)
+            },
             "timestamp": datetime.utcnow().isoformat()
         }
 
@@ -434,14 +555,28 @@ async def _notify_n8n_workflow(event_type: str, data: Dict[str, Any]):
 def _normalize_incoming_provider_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     """Normaliza payloads comuns de Twilio/Meta para um formato interno.
 
-    Saída esperada: { "from": str, "text": str, "attachments": list, "timestamp": str }
+    Saída esperada: { "from": str, "text": str, "media_type": str, "attachments": list, "timestamp": str }
     """
     try:
         # Twilio WhatsApp: Body, From, To
         if "Body" in data and "From" in data:
+            # Detectar mídia no Twilio
+            media_type = None
+            if data.get("MediaContentType0"):
+                content_type = data["MediaContentType0"].lower()
+                if "image" in content_type:
+                    media_type = "image"
+                elif "audio" in content_type:
+                    media_type = "audio"
+                elif "video" in content_type:
+                    media_type = "video"
+                elif "application" in content_type or "document" in content_type:
+                    media_type = "document"
+            
             return {
                 "from": data.get("From"),
                 "text": data.get("Body", ""),
+                "media_type": media_type,
                 "attachments": [],
                 "to": data.get("To"),
                 "timestamp": data.get("Timestamp") or datetime.utcnow().isoformat(),
@@ -454,9 +589,17 @@ def _normalize_incoming_provider_payload(data: Dict[str, Any]) -> Dict[str, Any]
                 messages = changes.get("messages") or []
                 if messages:
                     msg = messages[0]
+                    
+                    # Detectar mídia no Meta
+                    media_type = None
+                    msg_type = msg.get("type", "text")
+                    if msg_type in ["image", "audio", "video", "document"]:
+                        media_type = msg_type
+                    
                     return {
                         "from": msg.get("from"),
                         "text": (msg.get("text") or {}).get("body", ""),
+                        "media_type": media_type,
                         "attachments": [],
                         "to": changes.get("metadata", {}).get("phone_number_id"),
                         "timestamp": msg.get("timestamp") or datetime.utcnow().isoformat(),
