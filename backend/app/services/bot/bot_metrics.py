@@ -30,6 +30,13 @@ class BotMetrics:
             "successful_appointments": 0,
             "failed_appointments": 0,
             "handoffs_to_human": 0,
+            "handoff_reasons": {},
+            "media_detected": 0,
+            "media_types": {},
+            "confirmations_sent": 0,
+            "confirmations_yes": 0,
+            "confirmations_no": 0,
+            "feedbacks_received": 0,
             "average_turns_per_appointment": 0.0,
             "intents_by_source": {
                 "rule": 0,
@@ -109,11 +116,66 @@ class BotMetrics:
         await self._persist()
         logger.warning(f"❌ Agendamento falhou")
     
-    async def record_handoff_to_human(self):
-        """Registrar transferência para atendente humano"""
+    async def record_handoff_to_human(self, reason: str = "generic"):
+        """
+        Registrar transferência para atendente humano
+        
+        Args:
+            reason: Razão do handoff (human_requested, media, low_confidence, etc)
+        """
         self._metrics["handoffs_to_human"] += 1
+        
+        # Contabilizar por razão
+        if reason not in self._metrics["handoff_reasons"]:
+            self._metrics["handoff_reasons"][reason] = 0
+        self._metrics["handoff_reasons"][reason] += 1
+        
         await self._persist()
-        logger.info(f"🤝 Transferência para humano registrada")
+        logger.info(f"🤝 Transferência para humano registrada - Razão: {reason}")
+    
+    async def record_media_detected(self, media_type: str):
+        """
+        Registrar mídia detectada
+        
+        Args:
+            media_type: Tipo de mídia (audio, image, video, document)
+        """
+        self._metrics["media_detected"] += 1
+        
+        # Contabilizar por tipo
+        if media_type not in self._metrics["media_types"]:
+            self._metrics["media_types"][media_type] = 0
+        self._metrics["media_types"][media_type] += 1
+        
+        await self._persist()
+        logger.info(f"📎 Mídia detectada - Tipo: {media_type}")
+    
+    async def record_confirmation_sent(self):
+        """Registrar confirmação enviada"""
+        self._metrics["confirmations_sent"] += 1
+        await self._persist()
+        logger.info(f"✉️ Confirmação enviada")
+    
+    async def record_confirmation_response(self, confirmed: bool):
+        """
+        Registrar resposta de confirmação
+        
+        Args:
+            confirmed: True se confirmou, False se cancelou
+        """
+        if confirmed:
+            self._metrics["confirmations_yes"] += 1
+        else:
+            self._metrics["confirmations_no"] += 1
+        
+        await self._persist()
+        logger.info(f"{'✅' if confirmed else '❌'} Confirmação: {'Sim' if confirmed else 'Não'}")
+    
+    async def record_feedback_received(self):
+        """Registrar feedback recebido"""
+        self._metrics["feedbacks_received"] += 1
+        await self._persist()
+        logger.info(f"💬 Feedback recebido")
     
     def get_stats(self) -> Dict[str, Any]:
         """
@@ -123,6 +185,7 @@ class BotMetrics:
             Dict com todas as métricas
         """
         total_msgs = max(1, self._metrics["total_messages"])
+        total_confirmations = max(1, self._metrics["confirmations_sent"])
         
         return {
             "total_messages": self._metrics["total_messages"],
@@ -135,6 +198,17 @@ class BotMetrics:
             "successful_appointments": self._metrics["successful_appointments"],
             "failed_appointments": self._metrics["failed_appointments"],
             "handoffs_to_human": self._metrics["handoffs_to_human"],
+            "handoff_reasons": self._metrics["handoff_reasons"],
+            "media_detected": self._metrics["media_detected"],
+            "media_types": self._metrics["media_types"],
+            "confirmations_sent": self._metrics["confirmations_sent"],
+            "confirmations_yes": self._metrics["confirmations_yes"],
+            "confirmations_no": self._metrics["confirmations_no"],
+            "confirmation_rate": round(
+                (self._metrics["confirmations_yes"] / total_confirmations) * 100,
+                2
+            ),
+            "feedbacks_received": self._metrics["feedbacks_received"],
             "average_turns_per_appointment": round(
                 self._metrics["average_turns_per_appointment"], 
                 1
@@ -161,6 +235,13 @@ class BotMetrics:
             "successful_appointments": 0,
             "failed_appointments": 0,
             "handoffs_to_human": 0,
+            "handoff_reasons": {},
+            "media_detected": 0,
+            "media_types": {},
+            "confirmations_sent": 0,
+            "confirmations_yes": 0,
+            "confirmations_no": 0,
+            "feedbacks_received": 0,
             "average_turns_per_appointment": 0.0,
             "intents_by_source": {
                 "rule": 0,
@@ -234,4 +315,6 @@ class BotMetrics:
             f"  Uso de ML: {self.get_ml_usage_percentage():.1f}%\n"
             f"  Top intents: {', '.join(f'{k}({v})' for k, v in self.get_top_intents(3))}"
         )
+
+
 

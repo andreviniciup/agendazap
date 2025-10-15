@@ -62,11 +62,47 @@ VARIATIONS: Dict[str, Dict[str, List[str]]] = {
     },
     "handoff": {
         "day": [
-            "Se preferir, posso te direcionar ao atendimento humano agora.",
-            "Posso te passar para um atendente, tudo bem?",
+            "Entendi. Vou encaminhar para um profissional te responder rapidinho!",
+            "Sem problemas! Vou te passar para um atendente que já te retorna.",
         ],
         "night": [
-            "Se preferir, peço para um atendente te chamar amanhã cedo.",
+            "Vou encaminhar para um profissional e ele te retorna logo!",
+        ],
+    },
+    "media_handoff": {
+        "day": [
+            "Recebi {media_type}! No momento não consigo processar, então vou passar para um profissional, tudo bem?",
+            "Vi que você enviou {media_type}. Vou encaminhar para um profissional analisar, ok?",
+        ],
+        "night": [
+            "Recebi {media_type}. Vou passar para um profissional te responder amanhã cedo!",
+        ],
+    },
+    "reminder": {
+        "day": [
+            "⏰ Oi {client_name}! Lembrando do seu horário de {service_name} em {date} às {time}. Nos vemos lá!",
+            "⏰ Olá {client_name}! Seu horário de {service_name} é amanhã às {time}. Até lá!",
+        ],
+        "night": [
+            "⏰ Oi {client_name}! Lembre-se: {service_name} amanhã às {time}!",
+        ],
+    },
+    "confirmation_request": {
+        "day": [
+            "Oi {client_name}! Você confirma seu horário de {service_name} em {date} às {time}? Responda:\n1️⃣ Confirmo\n2️⃣ Preciso cancelar\n3️⃣ Reagendar",
+            "Olá {client_name}! Confirma o {service_name} para {date} às {time}?\n1️⃣ Sim, confirmo\n2️⃣ Cancelar\n3️⃣ Mudar horário",
+        ],
+        "night": [
+            "Oi {client_name}! Confirma {service_name} amanhã às {time}?\n1️⃣ Confirmo\n2️⃣ Cancelar\n3️⃣ Reagendar",
+        ],
+    },
+    "feedback_request": {
+        "day": [
+            "Oi {client_name}! Como foi sua experiência com {service_name}? De 0 a 10, qual a chance de nos recomendar? Pode comentar algo que possamos melhorar? 😊",
+            "Olá {client_name}! Gostou do {service_name}? Sua opinião é muito importante! De 0 a 10, nos recomendaria? Conte o que achou! 💬",
+        ],
+        "night": [
+            "Oi {client_name}! Como foi o {service_name}? De 0 a 10, nos recomendaria? 😊",
         ],
     },
     "clarify": {
