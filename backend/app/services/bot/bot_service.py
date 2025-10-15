@@ -245,10 +245,29 @@ class BotService:
             )
             return {"to_number": wa_number, "message": message}
 
-        # low confidence → se estamos em estado de coleta, manter pergunta; senão greeting
+        # low confidence → se estamos em estado de coleta, manter pergunta; senão considerar handoff
         if confidence < 0.3:
             conv["fail_count"] = conv.get("fail_count", 0) + 1
             await self.state.save(wa_number, conv)
+            
+            # Se falhou várias vezes seguidas, considerar handoff
+            if conv.get("fail_count", 0) >= 3:
+                # Marcar handoff
+                await self.state.mark_handoff(
+                    wa_number,
+                    reason="low_confidence",
+                    metadata={"intent": intent, "confidence": confidence, "fail_count": conv["fail_count"]}
+                )
+                
+                # Registrar métrica
+                await self.metrics.record_handoff_to_human("low_confidence")
+                
+                # Resposta informando handoff
+                tone = "night" if templates.is_night(now) else "day"
+                message = templates.pick("handoff", tone)
+                
+                return {"to_number": wa_number, "message": message, "handoff": True, "handoff_reason": "low_confidence"}
+            
             if conv_state in ("asking_date", "asking_window", "asking_time"):
                 # repetir a última pergunta de forma curta
                 if conv_state == "asking_date":
@@ -286,16 +305,22 @@ class BotService:
             return {"to_number": wa_number, "message": message}
 
         if intent == Intent.HUMAN:
-            # Usar template inteligente para atendimento humano
-            message = get_smart_response(
-                intent="human", 
-                confidence=confidence,
-                context={
-                    "user_name": slots.get("first_name", ""),
-                    "service_name": entities.get("service_name", "")
-                }
+            # Marcar handoff no estado
+            await self.state.mark_handoff(
+                wa_number,
+                reason="human_requested",
+                metadata={"intent": intent, "confidence": confidence}
             )
-            return {"to_number": wa_number, "message": message, "handoff": True}
+            
+            # Registrar métrica
+            await self.metrics.record_handoff_to_human("human_requested")
+            
+            # Usar template de handoff
+            now = datetime.utcnow()
+            tone = "night" if templates.is_night(now) else "day"
+            message = templates.pick("handoff", tone)
+            
+            return {"to_number": wa_number, "message": message, "handoff": True, "handoff_reason": "human_requested"}
 
         if intent == Intent.PRICE:
             # Usar template inteligente para preços
